@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">AstrBot Connect</string>
+    <string name="accessibility_description">仅在你在 AstrBot Connect 控制页开启限时授权后，允许你的 AstrBot Agent 读取当前界面、点击、滑动和输入。可随时通过通知栏或应用内停止。不读取密码字段，不绕过锁屏；重启服务后需要重新授权。</string>
+</resources>

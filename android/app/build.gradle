@@ -1,0 +1,34 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'io.github.astrbot.androidconnect'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'io.github.astrbot.androidconnect'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+        testInstrumentationRunner 'io.github.astrbot.androidconnect.SmokeInstrumentation'
+    }
+    signingConfigs {
+        release {
+            if (System.getenv('ANDROID_KEYSTORE_PATH')) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias 'android-connect'
+                keyPassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (System.getenv('ANDROID_KEYSTORE_PATH')) signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

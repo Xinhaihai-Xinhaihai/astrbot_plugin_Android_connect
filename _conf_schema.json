@@ -1,0 +1,73 @@
+{
+  "listen_host": {
+    "description": "监听地址",
+    "type": "string",
+    "default": "127.0.0.1",
+    "hint": "仅 Tunnel 保持 127.0.0.1；同时使用局域网时改为 0.0.0.0，并在 Windows 防火墙仅允许专用网络。"
+  },
+  "listen_port": {
+    "description": "手机接口端口",
+    "type": "int",
+    "default": 8765
+  },
+  "api_token": {
+    "description": "手机连接密钥",
+    "type": "string",
+    "default": "",
+    "hint": "留空自动生成；首次启动后保存在此配置及插件数据目录 token.txt。至少 32 个字符，不要公开。"
+  },
+  "provider_id": {
+    "description": "聊天模型 ID",
+    "type": "string",
+    "default": "",
+    "hint": "留空使用 AstrBot 默认模型。电脑截图需要支持图像和工具调用的模型。"
+  },
+  "system_prompt": {
+    "description": "手机助手人格/系统提示词",
+    "type": "text",
+    "default": "你是主人的 AstrBot 手机助手。用中文准确汇报结果；仅执行主人明确布置的任务。"
+  },
+  "allow_desktop_control": {
+    "description": "允许手机开启电脑控制",
+    "type": "bool",
+    "default": false,
+    "hint": "总开关。启用后还需要在 APK 中开启限时授权；插件重启后限时授权自动关闭。"
+  },
+  "allow_shell": {
+    "description": "允许 Agent 执行 PowerShell 命令",
+    "type": "bool",
+    "default": false,
+    "hint": "仅在电脑控制同时开启时生效；命令使用当前 Windows 用户权限。关闭此项不限制已授权的键鼠能操作哪些应用。"
+  },
+  "max_control_hours": {
+    "description": "电脑控制最长授权小时数",
+    "type": "int",
+    "default": 8
+  },
+  "task_timeout_seconds": {
+    "description": "单个任务最长执行秒数",
+    "type": "int",
+    "default": 3600
+  },
+  "max_agent_steps": {
+    "description": "单个任务最大 Agent 步数",
+    "type": "int",
+    "default": 80
+  },
+  "history_turns": {
+    "description": "发送给模型的历史对话轮数",
+    "type": "int",
+    "default": 12
+  },
+  "retention_days": {
+    "description": "任务和操作记录保留天数",
+    "type": "int",
+    "default": 30
+  },
+  "allow_phone_control": {
+    "hint": "还需在手机手动授权无障碍服务并开启限时手机控制；只能控制提交该任务的手机。",
+    "type": "bool",
+    "default": false,
+    "description": "允许 Agent 控制手机"
+  }
+}
