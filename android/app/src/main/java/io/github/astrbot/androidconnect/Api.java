@@ -35,10 +35,16 @@ final class Api {
         String base = validateUrl(prefs.url());
         String token = prefs.token();
         if (token.length() < 32) throw new Exception("请先在设置页填写连接密钥");
+        return request(base, token, method, path, body);
+    }
+    JSONObject pair(String address, String code) throws Exception {
+        return request(validateUrl(address), "", "POST", "/pair", json("code", code));
+    }
+    private JSONObject request(String base, String token, String method, String path, JSONObject body) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(base + "/api/v1" + path).openConnection();
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(10000); connection.setReadTimeout(16000);
-        connection.setRequestMethod(method); connection.setRequestProperty("Authorization", "Bearer " + token);
+        connection.setRequestMethod(method); if (!token.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + token);
         connection.setRequestProperty("Accept", "application/json");
         try {
             if (body != null) {

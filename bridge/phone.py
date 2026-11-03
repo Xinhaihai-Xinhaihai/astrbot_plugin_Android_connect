@@ -13,6 +13,7 @@ class PhoneBroker:
         self.devices = {}
         self.commands = {}
         self.lock = asyncio.Lock()
+        self.revoked_grants = set()
 
     def enabled(self, device):
         state = self.devices.get(device, {})
@@ -67,11 +68,15 @@ class PhoneBroker:
         device = request.match_info["device"]
         self.service.validate_id(device)
         enabled = data.get("enabled")
+        grant = data.get("grant", "")
+        self.service.validate_id(grant)
+        if grant in self.revoked_grants:
+            return web.json_response({"commands": [], "allowed": False, "stopped": True})
         if not isinstance(enabled, bool):
             raise ValueError("enabled 必须为布尔值")
         if device not in self.devices and len(self.devices) >= 16:
             raise web.HTTPTooManyRequests(reason="已达到最多 16 台手机的限制，请重启插件清理")
-        self.devices[device] = {"enabled": enabled, "seen": time.monotonic()}
+        self.devices[device] = {"enabled": enabled, "seen": time.monotonic(), "grant": grant}
         if not self.enabled(device):
             self.abort(device=device)
             return web.json_response({"commands": [], "allowed": False})
@@ -116,9 +121,18 @@ class PhoneBroker:
 
     async def disable(self, request):
         device = request.match_info["device"]
-        self.devices.pop(device, None)
+        state = self.devices.pop(device, None)
+        if state and state.get("grant"):
+            self.revoked_grants.add(state["grant"])
         self.abort(device=device)
         for job in self.service.store.list(limit=100):
             if job["phone"] and job["device"] == device:
                 await self.service.cancel_job(job["id"], "手机控制已关闭")
         return web.json_response({"stopped": True})
+
+    def stop_all(self):
+        for state in self.devices.values():
+            if state.get("grant"):
+                self.revoked_grants.add(state["grant"])
+        self.devices.clear()
+        self.abort()

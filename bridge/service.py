@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import re
+import secrets
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -39,6 +40,9 @@ class BridgeService:
         self.current_job = None
         self.expiry_task = None
         self.failures = OrderedDict()
+        self.pair_code = ""
+        self.pair_until = 0
+        self.pair_attempts = 0
         self.app = web.Application(middlewares=[self.middleware], client_max_size=32768)
         self.app.add_routes(
             [
@@ -49,6 +53,7 @@ class BridgeService:
                 web.post("/api/v1/jobs/{job_id}/cancel", self.cancel),
                 web.post("/api/v1/control", self.control),
                 web.post("/api/v1/stop", self.stop_all),
+            web.post("/api/v1/pair", self.pair),
                 web.post("/api/v1/desktop", self.desktop_action),
                 web.post("/api/v1/devices/{device}/poll", self.phone.poll),
                 web.post("/api/v1/devices/{device}/commands/{command_id}", self.phone.result),
@@ -58,6 +63,13 @@ class BridgeService:
 
     @web.middleware
     async def middleware(self, request, handler):
+        if request.path == "/api/v1/pair" and request.method == "POST":
+            try:
+                response = await self.pair(request)
+            except (ValueError, TypeError, json.JSONDecodeError):
+                response = web.json_response({"error": "配对请求格式错误"}, status=400)
+            response.headers["Cache-Control"] = "no-store"
+            return response
         # Do not trust X-Forwarded-For: the same authenticated API serves LAN and tunnels.
         peer = request.remote or "unknown"
         now = time.monotonic()
@@ -96,6 +108,29 @@ class BridgeService:
         if not isinstance(data, dict):
             raise ValueError("JSON 必须为对象")
         return data
+
+    def begin_pairing(self):
+        self.pair_code = f"{secrets.randbelow(1000000):06d}"
+        self.pair_until = time.monotonic() + 120
+        self.pair_attempts = 0
+        return self.pair_code
+
+    async def pair(self, request):
+        data = await self.body(request)
+        code = data.get("code", "")
+        if not isinstance(code, str) or not re.fullmatch(r"[0-9]{6}", code):
+            return web.json_response({"error": "请输入 6 位配对码"}, status=400)
+        if not self.pair_code or time.monotonic() >= self.pair_until:
+            return web.json_response({"error": "请先在电脑端开启配对，配对码有效期 2 分钟"}, status=403)
+        self.pair_attempts += 1
+        if self.pair_attempts > 5:
+            self.pair_code = ""
+            return web.json_response({"error": "尝试次数过多，请在电脑重新开启配对"}, status=429)
+        if not hmac.compare_digest(code, self.pair_code):
+            return web.json_response({"error": "配对码不正确"}, status=403)
+        self.pair_code = ""
+        self.store.audit("paired")
+        return web.json_response({"token": self.token, "name": "AstrBot Connect", "version": VERSION})
 
     def is_control_enabled(self):
         return (
@@ -265,8 +300,7 @@ class BridgeService:
         if self.expiry_task:
             self.expiry_task.cancel()
         await self.revoke(all_jobs=True)
-        self.phone.devices.clear()
-        self.phone.abort()
+        self.phone.stop_all()
         return web.json_response({"stopped": True})
 
     async def work(self):

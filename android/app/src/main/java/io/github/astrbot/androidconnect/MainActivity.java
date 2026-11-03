@@ -230,6 +230,14 @@ public class MainActivity extends Activity {
     }
     private void settings() {
         LinearLayout content=scrolling();
+        LinearLayout wizard=card(content,"添加或切换连接","选择连接方式，跟随步骤完成配对。配对后自动保存密钥。");
+        wizard.addView(button("局域网 · 搜索电脑与配对",()->new ConnectionWizard(this,prefs,()->{show("设置");refresh(true);}).lan()));
+        wizard.addView(button("Cloudflare · 远程连接向导",()->new ConnectionWizard(this,prefs,()->{show("设置");refresh(true);}).remote()));
+        for(String key:new String[]{"lan_url","remote_url"})if(!prefs.get(key,"").isEmpty()){
+            String address=prefs.get(key,"");wizard.addView(button("切换到"+(key.equals("lan_url")?"局域网":"远程")+"："+address,()->{
+                PhoneControlService.disableLocally(this);prefs.put("url",address);show("设置");refresh(true);
+            }));
+        }
         LinearLayout connect=card(content,"连接电脑","局域网填写电脑 IP；外出使用 Cloudflare Tunnel 的 HTTPS 地址。");
         EditText url=field(connect,"服务器地址",prefs.url(),"http://192.168.1.10:8765",false);
         String savedToken="";try{savedToken=prefs.token();}catch(Exception ignored){}
@@ -246,7 +254,7 @@ public class MainActivity extends Activity {
         LinearLayout access=card(content,"授权与隐私","电脑、手机与 PowerShell 各有独立总开关，默认关闭。");
         access.addView(button("打开手机无障碍设置",()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
         access.addView(text("密钥使用 Android Keystore 加密保存。聊天和任务记录保存在电脑端。截图与界面文本可能发送给 AstrBot 配置的模型。手机锁屏或系统授权界面不可被 Agent 绕过。",13,MUTED));
-        card(content,"AstrBot Connect 0.1.0","Android 8.0+ · Windows AstrBot 4.29.4+\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
+        card(content,"AstrBot Connect 0.1.0","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
     }
     private void remoteDesktop() {
         if(!status.optBoolean("desktop_enabled")){error("请先开启电脑控制");return;}

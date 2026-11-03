@@ -125,7 +125,7 @@ async def test_phone_requires_device_consent_and_current_job(harness):
     saved = bridge.store.get(job["id"])
     command = asyncio.create_task(bridge.phone.execute(saved, "inspect", {}))
     await asyncio.sleep(0)
-    response = await client.post("/api/v1/devices/phone-test/poll", json={"enabled": True})
+    response = await client.post("/api/v1/devices/phone-test/poll", json={"enabled": True, "grant": "grant-test"})
     payload = await response.json()
     cmd = payload["commands"][0]
     assert "future" not in cmd

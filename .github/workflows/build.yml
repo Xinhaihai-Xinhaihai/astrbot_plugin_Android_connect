@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install aiohttp pytest pytest-asyncio ruff
+      - run: pip install aiohttp zeroconf pytest pytest-asyncio ruff
       - run: ruff check . && python -m compileall -q main.py bridge && python -m pytest -q
   android:
     runs-on: ubuntu-latest
@@ -50,12 +50,38 @@ jobs:
         if: github.event_name == 'pull_request'
         working-directory: android
         run: gradle --no-daemon assembleDebug lintDebug assembleDebugAndroidTest
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test four pages on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            adb install android/app/build/outputs/apk/debug/app-debug.apk
+            adb install android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w io.github.astrbot.androidconnect.test/io.github.astrbot.androidconnect.SmokeInstrumentation | tee instrumentation.txt
+            grep -q 'PASS: four navigation pages' instrumentation.txt
+            adb pull /sdcard/Android/data/io.github.astrbot.androidconnect/files/screenshots ui-screenshots
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: android-apks
           path: |
             android/app/build/outputs/apk/
             android/app/build/reports/lint-results-*.html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-verification
+          path: |
+            ui-screenshots/
+            instrumentation.txt
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [python, android]

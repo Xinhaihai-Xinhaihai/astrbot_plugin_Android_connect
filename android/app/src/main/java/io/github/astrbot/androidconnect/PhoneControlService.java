@@ -24,6 +24,7 @@ public class PhoneControlService extends Service {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private volatile boolean running;
+    private String grant;
     static boolean enabled() { return authorizedUntil > System.currentTimeMillis() && PhoneAccessibilityService.instance != null; }
     static void disableLocally(Context context) {
         authorizedUntil = 0; connectionState = "手机控制已关闭";
@@ -37,6 +38,7 @@ public class PhoneControlService extends Service {
         if (PhoneAccessibilityService.instance == null) { authorizedUntil = 0; stopSelf(); return START_NOT_STICKY; }
         int hours = Math.max(1, Math.min(8, intent.getIntExtra("hours", 1)));
         authorizedUntil = System.currentTimeMillis() + hours * 3600000L;
+        grant = java.util.UUID.randomUUID().toString();
         live = this;
         NotificationManager notifications = getSystemService(NotificationManager.class);
         notifications.createNotificationChannel(new NotificationChannel("phone_control", "手机控制", NotificationManager.IMPORTANCE_LOW));
@@ -56,7 +58,8 @@ public class PhoneControlService extends Service {
         try {
             while (running && enabled()) {
                 try {
-                    JSONObject response = api.call("POST", "/devices/" + device + "/poll", Api.json("enabled", true));
+                    JSONObject response = api.call("POST", "/devices/" + device + "/poll", Api.json("enabled", true, "grant", grant));
+                    if (response.optBoolean("stopped")) { authorizedUntil = 0; break; }
                     boolean allowed = response.optBoolean("allowed");
                     connectionState = allowed ? "手机在线，可接收 Agent 指令" : "请在电脑插件配置允许手机控制";
                     JSONArray commands = response.optJSONArray("commands");

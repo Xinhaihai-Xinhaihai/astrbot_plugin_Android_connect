@@ -69,5 +69,17 @@
     "type": "bool",
     "default": false,
     "description": "允许 Agent 控制手机"
+  },
+  "enable_lan_discovery": {
+    "hint": "监听地址为 0.0.0.0 时广播电脑名称，供 APK 搜索；不广播连接密钥。",
+    "description": "局域网自动发现",
+    "default": true,
+    "type": "bool"
+  },
+  "enable_pairing": {
+    "hint": "开启并保存/重载插件后，在 AstrBot 日志中显示 6 位配对码；2 分钟内一次有效，自动将此开关复位。也可管理员私聊 /android_pair。",
+    "description": "生成一次手机配对码",
+    "default": false,
+    "type": "bool"
   }
 }
