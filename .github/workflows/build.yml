@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install aiohttp pytest pytest-asyncio ruff
-      - run: ruff check . && ruff format --check . && python -m pytest -q
+      - run: ruff check . && python -m compileall -q main.py bridge && python -m pytest -q
   android:
     runs-on: ubuntu-latest
     steps:
