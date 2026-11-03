@@ -99,7 +99,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p release-files
-          cp build-output/apk/release/app-release.apk release-files/AstrBot-Android-Connect-${GITHUB_REF_NAME}.apk
+          cp build-output/outputs/apk/release/app-release.apk release-files/AstrBot-Android-Connect-${GITHUB_REF_NAME}.apk
           git archive --format=zip --prefix=astrbot_plugin_Android_connect/ HEAD -o release-files/astrbot_plugin_Android_connect-${GITHUB_REF_NAME}.zip
           cd release-files
           sha256sum *.apk *.zip > SHA256SUMS.txt

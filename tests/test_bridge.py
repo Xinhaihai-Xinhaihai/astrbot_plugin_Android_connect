@@ -164,3 +164,40 @@ def test_restart_never_replays_operations(tmp_path):
     reopened = Store(path)
     assert reopened.get("job-restart")["state"] == "interrupted"
     reopened.close()
+
+
+async def test_pairing_is_closed_by_default_and_single_use(harness):
+    bridge, client, _, _ = harness
+    headers = {"Authorization": ""}
+    assert (await client.post("/api/v1/pair", json={"code": "123456"}, headers=headers)).status == 403
+    code = bridge.begin_pairing()
+    response = await client.post("/api/v1/pair", json={"code": code}, headers=headers)
+    assert response.status == 200
+    assert (await response.json())["token"] == bridge.token
+    assert response.headers["Cache-Control"] == "no-store"
+    assert (await client.post("/api/v1/pair", json={"code": code}, headers=headers)).status == 403
+
+
+async def test_pairing_rate_limit_and_expiry(harness):
+    bridge, client, _, _ = harness
+    code = bridge.begin_pairing()
+    wrong = "000000" if code != "000000" else "111111"
+    for _ in range(5):
+        assert (await client.post("/api/v1/pair", json={"code": wrong})).status == 403
+    assert (await client.post("/api/v1/pair", json={"code": code})).status == 429
+    code = bridge.begin_pairing()
+    bridge.pair_until = time.monotonic() - 1
+    assert (await client.post("/api/v1/pair", json={"code": code})).status == 403
+
+
+async def test_emergency_stop_cannot_be_undone_by_old_phone_heartbeat(harness):
+    bridge, client, _, _ = harness
+    bridge.phone.devices["phone-test"] = {
+        "enabled": True, "seen": time.monotonic(), "grant": "grant-test"
+    }
+    await client.post("/api/v1/stop", json={})
+    response = await client.post(
+        "/api/v1/devices/phone-test/poll", json={"enabled": True, "grant": "grant-test"}
+    )
+    assert (await response.json())["stopped"] is True
+    assert not bridge.phone.enabled("phone-test")

@@ -74,6 +74,11 @@ public class MainActivity extends Activity {
     }
     private Button button(String title, Runnable click) {
         Button b = new Button(this); b.setText(title); b.setAllCaps(false); b.setTextColor(BLUE); b.setTextSize(14);
+        b.setBackground(new android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(Color.rgb(219,224,255)),
+            background(Color.rgb(239,242,255),12),null));
+        LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,-2);spacing.topMargin=dp(6);spacing.bottomMargin=dp(4);b.setLayoutParams(spacing);
+        b.setPadding(dp(12),dp(10),dp(12),dp(10));
         b.setMinHeight(dp(48)); b.setOnClickListener(v -> click.run()); return b;
     }
     private LinearLayout card(LinearLayout parent, String title, String subtitle) {
