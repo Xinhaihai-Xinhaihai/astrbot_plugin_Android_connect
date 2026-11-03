@@ -21,21 +21,21 @@ public class PhoneAccessibilityService extends AccessibilityService {
     @Override public void onDestroy() {
         instance = null; PhoneControlService.disableLocally(this); super.onDestroy();
     }
-    private void check() throws Exception {
+    private void check(String action) throws Exception {
         if (!PhoneControlService.enabled()) throw new Exception("手机控制授权已关闭或到期");
         KeyguardManager keyguard = getSystemService(KeyguardManager.class);
         if (keyguard.isKeyguardLocked()) throw new Exception("手机已锁屏，请主人先解锁");
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root != null) {
             String pkg = String.valueOf(root.getPackageName());
-            if (pkg.equals(getPackageName()) || pkg.equals("com.android.settings")
+            if ((pkg.equals(getPackageName()) && !action.equals("home") && !action.equals("open_app")) || pkg.equals("com.android.settings")
                 || pkg.contains("permissioncontroller") || pkg.equals("com.android.systemui"))
                 throw new Exception("不能远程操作本应用、系统设置或系统授权界面");
         }
     }
     void execute(String action, JSONObject args, Result callback) {
         try {
-            check();
+            check(action);
             switch (action) {
                 case "inspect": {
                     JSONArray nodes = new JSONArray();
@@ -88,7 +88,7 @@ public class PhoneAccessibilityService extends AccessibilityService {
     private void gesture(int x1, int y1, int x2, int y2, int duration, Result callback) throws Exception {
         int w = getResources().getDisplayMetrics().widthPixels, h = getResources().getDisplayMetrics().heightPixels;
         if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0 || x1 >= w || x2 >= w || y1 >= h || y2 >= h) throw new Exception("手机坐标超出屏幕");
-        check(); Path path = new Path(); path.moveTo(x1, y1); if (x1 != x2 || y1 != y2) path.lineTo(x2, y2);
+        check("gesture"); Path path = new Path(); path.moveTo(x1, y1); if (x1 != x2 || y1 != y2) path.lineTo(x2, y2);
         GestureDescription description = new GestureDescription.Builder()
             .addStroke(new GestureDescription.StrokeDescription(path, 0, duration)).build();
         boolean accepted = dispatchGesture(description, new GestureResultCallback() {
