@@ -37,7 +37,7 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
         root.setOnApplyWindowInsetsListener((v,i)->{v.setPadding(i.getSystemWindowInsetLeft(),i.getSystemWindowInsetTop(),i.getSystemWindowInsetRight(),i.getSystemWindowInsetBottom());return i;});
         HorizontalScrollView tools=new HorizontalScrollView(this);LinearLayout bar=new LinearLayout(this);tools.addView(bar);root.addView(tools);
         bar.addView(button("返回",this::finish));bar.addView(button("横屏 / 竖屏",()->setRequestedOrientation(getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE?ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT:ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE)));
-        bar.addView(button("虚拟按键",()->pad.setVisibility(pad.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE)));
+        bar.addView(button("虚拟按键",()->{disconnect();pad.setVisibility(pad.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);if(live)connect();}));
         bar.addView(button("暂停 / 继续",()->{live=!live;if(!live)disconnect();else connect();}));
         bar.addView(button("画质 / 刷新率",this::quality));bar.addView(button("手柄映射",this::mappingDialog));
         bar.addView(button("输入文字",this::typeText));bar.addView(button("释放按键",()->{disconnect();connect();}));

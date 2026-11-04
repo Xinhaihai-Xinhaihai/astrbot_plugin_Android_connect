@@ -49,6 +49,14 @@ final class RemoteChecks {
             await(test,()->server.latestInput.optJSONArray("keys").toString().contains("a"),"External keyboard missing");
             test.runOnMainSync(()->{desktop.dispatchKeyEvent(new KeyEvent(0,0,KeyEvent.ACTION_UP,KeyEvent.KEYCODE_A,0,0,1,0,0,InputDevice.SOURCE_KEYBOARD));desktop.dispatchKeyEvent(new KeyEvent(0,0,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A,0,0,2,0,0,InputDevice.SOURCE_GAMEPAD));});
             await(test,()->server.latestInput.optJSONArray("keys").toString().contains("space"),"Gamepad mapping missing");
+            test.runOnMainSync(()->desktop.dispatchKeyEvent(new KeyEvent(0,0,KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BUTTON_A,0,0,2,0,0,InputDevice.SOURCE_GAMEPAD)));
+            test.runOnMainSync(()->{
+                MotionEvent.PointerProperties properties=new MotionEvent.PointerProperties();properties.id=0;properties.toolType=MotionEvent.TOOL_TYPE_MOUSE;
+                MotionEvent.PointerCoords position=new MotionEvent.PointerCoords();position.x=300;position.y=150;position.setAxisValue(MotionEvent.AXIS_VSCROLL,1);
+                long now=SystemClock.uptimeMillis();MotionEvent mouse=MotionEvent.obtain(now,now,MotionEvent.ACTION_SCROLL,1,new MotionEvent.PointerProperties[]{properties},new MotionEvent.PointerCoords[]{position},0,0,1,1,3,0,InputDevice.SOURCE_MOUSE,0);
+                desktop.dispatchGenericMotionEvent(mouse);mouse.recycle();
+            });
+            await(test,()->server.inputHistory.stream().anyMatch(s->s.contains("\"scroll\":1")),"External mouse wheel missing");
             screenshot(test,desktop,"横屏遥控");int before=server.releases;test.runOnMainSync(desktop::finish);activity=null;
             await(test,()->server.releases>before,"Leaving desktop did not release keys");
         } finally {if(activity!=null){Activity current=activity;test.runOnMainSync(current::finish);}prefs.put("url",oldUrl);prefs.token(oldToken);}
