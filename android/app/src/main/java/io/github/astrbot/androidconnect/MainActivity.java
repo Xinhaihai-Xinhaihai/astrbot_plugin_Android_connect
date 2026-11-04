@@ -20,6 +20,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -38,7 +39,7 @@ public class MainActivity extends Activity {
     private LinearLayout root, body, navigation, feed;
     private TextView statusText;
     private EditText message;
-    private Button send;
+    private Button send, newChat;
     private CheckBox useDesktop, usePhone;
     private String page = "聊天", draft = "", lastFeed = "";
     private boolean connected, refreshing, posting, resumed, desktopWanted, phoneWanted;
@@ -96,7 +97,7 @@ public class MainActivity extends Activity {
     }
     private void show(String selected) {
         if (message != null) draft=message.getText().toString();
-        message=null; feed=null; page=selected; lastFeed="";
+        message=null; feed=null; send=null; newChat=null; page=selected; lastFeed="";
         root=column(); root.setBackgroundColor(BG);
         root.setOnApplyWindowInsetsListener((v,insets)-> {
             root.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());
@@ -135,11 +136,23 @@ public class MainActivity extends Activity {
         message=new EditText(this); message.setTextSize(15); message.setMinLines(2); message.setMaxLines(5); message.setGravity(Gravity.TOP);
         message.setHint("例如：整理电脑里的项目，完成后告诉我结果…"); message.setText(draft);
         message.setBackground(background(Color.WHITE,14)); message.setPadding(dp(14),dp(12),dp(14),dp(12)); composer.addView(message);
-        LinearLayout actions=new LinearLayout(this); actions.addView(button("新对话",()->{
-            prefs.newSession(); jobs=new JSONArray(); lastFeed=""; renderFeed();
-        }),new LinearLayout.LayoutParams(0,dp(48),1));
+        LinearLayout actions=new LinearLayout(this);
+        newChat=button("新对话",this::newConversation); newChat.setEnabled(!posting);
+        actions.addView(newChat,new LinearLayout.LayoutParams(0,dp(48),1));
         send=button("发送任务",this::submit); send.setBackground(background(BLUE,12)); send.setTextColor(Color.WHITE); send.setEnabled(!posting);
         actions.addView(send,new LinearLayout.LayoutParams(0,dp(48),1)); composer.addView(actions); body.addView(composer);
+    }
+    private void newConversation() {
+        if(posting)return;
+        prefs.newSession(); prefs.put("pending",""); draft="";
+        if(message!=null)message.setText("");
+        lastFeed=""; renderFeed();
+        Toast.makeText(this,"新对话已创建",Toast.LENGTH_SHORT).show();
+        if(message!=null) {
+            message.requestFocus();
+            InputMethodManager keyboard=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
+            if(keyboard!=null)keyboard.showSoftInput(message,InputMethodManager.SHOW_IMPLICIT);
+        }
     }
     private void tasks() {
         LinearLayout content=scrolling();
@@ -153,7 +166,7 @@ public class MainActivity extends Activity {
     private String when(double timestamp) { return new SimpleDateFormat("MM-dd HH:mm",Locale.CHINA).format(new Date((long)(timestamp*1000))); }
     private void renderFeed() {
         if(feed==null) return;
-        String signature=page+jobs.toString(); if(signature.equals(lastFeed)) return; lastFeed=signature; feed.removeAllViews();
+        String signature=page+prefs.id("session")+connected+jobs.toString(); if(signature.equals(lastFeed)) return; lastFeed=signature; feed.removeAllViews();
         String session=prefs.id("session"); int shown=0;
         for(int step=0;step<jobs.length();step++) {
             int index=page.equals("聊天")?jobs.length()-1-step:step;
@@ -170,7 +183,13 @@ public class MainActivity extends Activity {
             c.addView(button("查看操作记录",()->details(job.optString("id"))));
             if(state.equals("queued")||state.equals("running")) c.addView(button("停止这个任务",()->call(()->api.call("POST","/jobs/"+job.optString("id")+"/cancel",Api.json()),r->refresh(true))));
         }
-        if(shown==0) card(feed,page.equals("聊天")?"从一句话开始":"暂时没有任务","连接电脑后，发送第一条消息。你可以先只聊天，再按需开启设备控制。");
+        if(shown==0) {
+            boolean chatting=page.equals("聊天");
+            String title=chatting?(prefs.get("session_started","").isEmpty()?"从一句话开始":"新对话已创建"):"暂时没有任务";
+            String hint=connected?"在下方输入消息并发送，即可开始聊天。旧对话的任务仍可在“任务”页查看。":"请先在“设置”中连接电脑，再发送消息。新建对话可以先完成，连接后即可聊天。";
+            LinearLayout empty=card(feed,title,chatting?hint:"任务保存在电脑端，连接后可查看执行记录。");
+            if(!connected)empty.addView(button("前往连接设置",()->show("设置")));
+        }
     }
     private void details(String id) {
         call(()->api.call("GET","/jobs/"+id,null),r->{
@@ -182,6 +201,7 @@ public class MainActivity extends Activity {
     }
     private void submit() {
         String prompt=message.getText().toString().trim(); if(prompt.isEmpty()||posting)return;
+        if(prefs.url().isEmpty()){error("请先前往“设置”，连接电脑后再发送消息。");return;}
         JSONObject job=Api.json("id",UUID.randomUUID().toString(),"session",prefs.id("session"),"prompt",prompt,
             "control",desktopWanted,"phone",phoneWanted,"device",prefs.id("device"));
         // Preserve the exact request ID across a timeout and an explicit retry.
@@ -190,11 +210,14 @@ public class MainActivity extends Activity {
             if(old.optString("prompt").equals(prompt)&&old.optString("session").equals(prefs.id("session"))
                &&old.optBoolean("control")==desktopWanted&&old.optBoolean("phone")==phoneWanted)job=old;
         }}catch(Exception ignored){}
-        prefs.put("pending",job.toString()); final JSONObject request=job; posting=true; send.setEnabled(false);
+        prefs.put("pending",job.toString()); final JSONObject request=job; posting=true; send.setEnabled(false); if(newChat!=null)newChat.setEnabled(false);
         executor.execute(()->{
             try {api.call("POST","/jobs",request);runOnUiThread(()->{
-                posting=false;prefs.put("pending","");draft="";if(message!=null)message.setText("");if(send!=null)send.setEnabled(true);refresh(true);
-            });}catch(Exception e){runOnUiThread(()->{posting=false;if(send!=null)send.setEnabled(true);error(e.getMessage()+"\n消息已保留，再次发送相同内容会使用原任务 ID。");});}
+                posting=false;prefs.put("pending","");
+                if(message!=null&&message.getText().toString().trim().equals(prompt)){draft="";message.setText("");}
+                else if(message==null&&draft.trim().equals(prompt))draft="";
+                if(send!=null)send.setEnabled(true);if(newChat!=null)newChat.setEnabled(true);refresh(true);
+            });}catch(Exception e){runOnUiThread(()->{posting=false;if(send!=null)send.setEnabled(true);if(newChat!=null)newChat.setEnabled(true);error(e.getMessage()+"\n消息已保留，再次发送相同内容会使用原任务 ID。");});}
         });
     }
     private void controls() {
@@ -259,7 +282,7 @@ public class MainActivity extends Activity {
         LinearLayout access=card(content,"授权与隐私","电脑、手机与 PowerShell 各有独立总开关，默认关闭。");
         access.addView(button("打开手机无障碍设置",()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
         access.addView(text("密钥使用 Android Keystore 加密保存。聊天和任务记录保存在电脑端。截图与界面文本可能发送给 AstrBot 配置的模型。手机锁屏或系统授权界面不可被 Agent 绕过。",13,MUTED));
-        card(content,"AstrBot Connect 0.1.1","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
+        card(content,"AstrBot Connect 0.1.2","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
     }
     private void remoteDesktop() {
         if(!status.optBoolean("desktop_enabled")){error("请先开启电脑控制");return;}

@@ -4,7 +4,7 @@
 
 [下载 APK 与插件 ZIP](https://github.com/Xinhaihai-Xinhaihai/astrbot_plugin_Android_connect/releases) · [Cloudflare 连接指南](docs/CONNECTION.md) · [使用与权限](docs/USAGE.md) · [MIT License](LICENSE)
 
-> **v0.1.1 预发布。** 适用于 Windows 原生运行的 AstrBot 4.29.4+、Python 3.12+、Android 8.0+。电脑控制和手机控制默认关闭，首次使用请完成下面的配对与授权。
+> **v0.1.2 预发布。** 适用于 Windows 原生运行的 AstrBot 4.29.4+、Python 3.12+、Android 8.0+。电脑控制和手机控制默认关闭，首次使用请完成下面的配对与授权。
 
 ## 能做什么
 
@@ -24,7 +24,7 @@
 
 ## 手机界面分类
 
-- **聊天**：发送消息；每条任务分别选择“可操控电脑”“可操控手机”；新建对话。
+- **聊天**：发送消息；每条任务分别选择“可操控电脑”“可操控手机”。点击“新对话”会清空草稿、显示“新对话已创建”并聚焦输入框；旧任务可在任务页查看。
 - **任务**：集中查看排队、运行、完成、失败及停止记录，查看操作记录或停止单个任务。
 - **控制**：电脑权限、手机权限、授权到期时间、电脑遥控面板、本机手机操作记录、紧急停止。
 - **设置**：搜索电脑、Cloudflare 分步向导、连接地址/密钥、无障碍授权入口、隐私说明。
@@ -54,7 +54,7 @@
 ## 二、安装 APK
 
 1. 打开本仓库 [Releases](https://github.com/Xinhaihai-Xinhaihai/astrbot_plugin_Android_connect/releases)。
-2. 下载 `AstrBot-Android-Connect-v0.1.1.apk`，传到手机安装。不要把插件 ZIP 当成手机安装包。
+2. 下载 `AstrBot-Android-Connect-v0.1.2.apk`，传到手机安装。不要把插件 ZIP 当成手机安装包。
 3. 若系统提示，允许当前浏览器/文件管理器安装此 APK。
 4. 启动 **AstrBot Connect**，进入 **设置**。
 
@@ -106,11 +106,11 @@ cloudflared tunnel --url http://127.0.0.1:8765
 
 ### 长期使用：固定域名隧道
 
-1. 准备 Cloudflare 账户和已由 Cloudflare 管理 DNS 的域名。
-2. 在 Cloudflare One 控制台创建 Cloudflared Tunnel，选择 Windows，按控制台命令安装连接器。
+1. 已在阿里云等平台买域名的用户，在 Cloudflare 添加域名并选择 Free；将其分配的两条名称服务器填回域名注册商，等待域名变为 Active。详见 [逐步接入指南](docs/CONNECTION.md#先把已购买的域名接入-cloudflare)。
+2. 在 Cloudflare 控制台 **Networking → Tunnels** 创建 Tunnel，选择 Windows，按控制台命令安装连接器。
 3. 确认隧道状态为 **Healthy**。
-4. 添加 Published application route / Public hostname，例如 `astrbot.example.com`。
-5. Service 类型选 **HTTP**，服务地址填 **localhost:8765**。
+4. 隧道内打开 **Routes → Add route → Published application**，例如 `astrbot.example.com`，Path 留空。
+5. Service URL 填 **http://127.0.0.1:8765**；若分成类型与地址两栏，分别填 **HTTP** 和 **127.0.0.1:8765**。
 6. 手机填写 `https://astrbot.example.com`，用电脑一次性配对码连接。
 
 本项目不用公开 AstrBot 管理面板。隧道安装令牌属于 cloudflared，**不要填进手机密钥框**。首版未实现 Cloudflare Access 的浏览器登录或 service-token 鉴权流程；请使用插件本身的随机密钥鉴权。

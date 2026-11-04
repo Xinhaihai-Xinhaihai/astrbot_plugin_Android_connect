@@ -23,7 +23,10 @@ final class Prefs {
         if (value.isEmpty()) { value = UUID.randomUUID().toString(); put(key, value); }
         return value;
     }
-    void newSession() { put("session", UUID.randomUUID().toString()); }
+    void newSession() {
+        p.edit().putString("session",UUID.randomUUID().toString())
+            .putString("session_started",Long.toString(System.currentTimeMillis())).commit();
+    }
     String url() { return get("url", ""); }
     private SecretKey key() throws Exception {
         KeyStore ks = KeyStore.getInstance("AndroidKeyStore"); ks.load(null);

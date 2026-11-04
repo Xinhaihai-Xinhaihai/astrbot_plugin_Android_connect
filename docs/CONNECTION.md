@@ -35,13 +35,26 @@ cloudflared tunnel --url http://127.0.0.1:8765
 
 ## Cloudflare 固定域名隧道
 
-1. 将自己的域名接入 Cloudflare DNS。
-2. 登录 Cloudflare One 控制台，进入 **Networks → Connectors / Cloudflare Tunnels**。界面名称可能随版本变化。
-3. 选择创建 Tunnel，类型 Cloudflared，输入名称。
+### 先把已购买的域名接入 Cloudflare
+
+域名可以继续在阿里云等原注册商续费；这里接入的是 DNS，无须重新购买域名或转移注册商。
+
+1. 登录 [Cloudflare 控制台](https://dash.cloudflare.com)，进入 **Domains → Onboard a domain**（域名 → 添加域名）。
+2. 填写根域名，例如 `example.com`，不要填写 `https://` 或 `astrbot.example.com`。继续并选择 **Free**。
+3. 查看扫描到的 DNS 记录。若域名已有网站或邮箱，应先核对对应记录；新买且尚未使用的域名可以继续，后面的隧道路由会创建子域名记录。
+4. 记下 Cloudflare 为此域名分配的 **两条名称服务器**，形如 `xxx.ns.cloudflare.com`。必须使用自己的实际值。
+5. 回到域名注册商的域名管理页，修改 **DNS 服务器 / 名称服务器**。阿里云入口在域名控制台内该域名的管理页面；将原 DNS 服务器替换为上一步两条 Cloudflare 地址并保存。这一步不是添加普通 A 记录。
+6. 返回 Cloudflare 确认已修改名称服务器，等待域名状态变为 **Active**。新域名或 DNS 修改可能需要等待传播；不要把电脑内网 IP 填进公网 A 记录。
+
+### 创建连接电脑的隧道
+
+1. 确认 AstrBot 插件已运行，默认服务地址为 `http://127.0.0.1:8765`。
+2. 登录 Cloudflare 控制台，进入 **Networking → Tunnels**。旧界面也可能显示 **Networks → Connectors / Cloudflare Tunnels**。
+3. 选择 **Create a tunnel**，输入名称，例如 `astrbot-home`；如果询问连接器类型，选择 **Cloudflared**。
 4. 选择 Windows 环境，执行控制台给出的安装命令。命令里的 token 属于隧道，不属于插件。
 5. 等待连接器 Healthy。长期运行可按控制台说明安装 Windows 服务。
-6. 创建 Published application route / Public hostname，例如 `astrbot.example.com`。
-7. Service 类型 **HTTP**，目标 **localhost:8765**。如果插件端口改过，这里也要改。
+6. 隧道内打开 **Routes → Add route → Published application**。Subdomain 填 `astrbot`，Domain 选择自己的域名，Path 留空；得到的地址例如 `astrbot.example.com`。
+7. **Service URL** 填 `http://127.0.0.1:8765`。如果分成两个输入框，类型选择 **HTTP**、目标填 `127.0.0.1:8765`。如果插件端口改过，这里也要改。
 8. 电脑插件开启一次性配对；手机填写 `https://astrbot.example.com` 和配对码。
 9. 保存成功后切换手机移动网络，再发送普通聊天验证异地访问。
 
@@ -67,6 +80,8 @@ cloudflared tunnel --url http://127.0.0.1:8765
 - [Wallpaper Engine 手机配对说明](https://help.wallpaperengine.io/en/mobile/pairing.html)
 - [Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)
 - [Cloudflare Tunnel 文档](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/)
+- [Cloudflare 域名与名称服务器接入](https://developers.cloudflare.com/dns/zone-setups/full-setup/setup/)
+- [Cloudflare 控制台创建隧道与发布应用](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/)
 - [Android 网络服务发现](https://developer.android.com/develop/connectivity/wifi/use-nsd)
 
 参考这些产品的交互与官方接入方式，不表示本项目与它们存在合作关系。

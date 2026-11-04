@@ -42,7 +42,9 @@ public class SmokeInstrumentation extends Instrumentation {
                     }catch(Exception e){throw new RuntimeException(e);}
                 });
             }
-            results.putString("stream","PASS: four navigation pages and endpoint validation\n");finish(0,results);
+            runOnMainSync(activity::finish);
+            ConversationChecks.run(this);
+            results.putString("stream","PASS: four navigation pages, endpoint validation and new conversation lifecycle\n");finish(0,results);
         }catch(Exception e){results.putString("stream","FAIL: "+e+"\n");finish(1,results);}
     }
 }
