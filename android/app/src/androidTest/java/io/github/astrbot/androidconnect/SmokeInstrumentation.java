@@ -13,6 +13,10 @@ import java.io.FileOutputStream;
 
 public class SmokeInstrumentation extends Instrumentation {
     @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
+    @Override public boolean onException(Object object,Throwable error){
+        Bundle result=new Bundle();result.putString("stream","FAIL: "+android.util.Log.getStackTraceString(error)+"\n");finish(1,result);return true;
+    }
+    private void stage(String name){Bundle progress=new Bundle();progress.putString("stream","Checking: "+name+"\n");sendStatus(0,progress);}
     private Button find(View view, String label) {
         if (view instanceof Button && label.contentEquals(((Button)view).getText())) return (Button)view;
         if(view instanceof ViewGroup) for(int i=0;i<((ViewGroup)view).getChildCount();i++){
@@ -43,8 +47,8 @@ public class SmokeInstrumentation extends Instrumentation {
                 });
             }
             runOnMainSync(activity::finish);
-            ConversationChecks.run(this);
-            RemoteChecks.run(this);
+            stage("conversation and repeat modes");ConversationChecks.run(this);
+            stage("plugin panel and desktop inputs");RemoteChecks.run(this);
             results.putString("stream","PASS: four navigation pages, endpoint validation, new conversation lifecycle, four repeat modes, plugin switch, landscape, virtual keys, external keyboard, gamepad and exit release\n");finish(0,results);
         }catch(Exception e){results.putString("stream","FAIL: "+e+"\n");finish(1,results);}
     }
