@@ -32,7 +32,7 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
         super.onCreate(saved);getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE|WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs=new Prefs(this);api=new Api(prefs);loadMappings();
         ((InputManager)getSystemService(INPUT_SERVICE)).registerInputDeviceListener(this,handler);
-        LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setBackgroundColor(Color.rgb(20,24,34));
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Color.rgb(20,24,34));
         root.setOnApplyWindowInsetsListener((v,i)->{v.setPadding(i.getSystemWindowInsetLeft(),i.getSystemWindowInsetTop(),i.getSystemWindowInsetRight(),i.getSystemWindowInsetBottom());return i;});
         HorizontalScrollView tools=new HorizontalScrollView(this);LinearLayout bar=new LinearLayout(this);tools.addView(bar);root.addView(tools);
         bar.addView(button("返回",this::finish));bar.addView(button("横屏 / 竖屏",()->setRequestedOrientation(getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE?ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT:ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE)));
@@ -42,7 +42,7 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
         bar.addView(button("输入文字",this::typeText));bar.addView(button("释放按键",()->{disconnect();connect();}));
         info=new TextView(this);info.setTextColor(Color.WHITE);info.setTextSize(12);info.setText("连接桌面中 · USB / 蓝牙键鼠及手柄可直接接入手机");root.addView(info);
         FrameLayout canvas=new FrameLayout(this);screen=new ImageView(this);screen.setScaleType(ImageView.ScaleType.FIT_CENTER);screen.setFocusable(true);screen.setFocusableInTouchMode(true);canvas.addView(screen,new FrameLayout.LayoutParams(-1,-1));root.addView(canvas,new LinearLayout.LayoutParams(-1,0,1));
-        pad=new LinearLayout(this);pad.setOrientation(1);pad.setBackgroundColor(0x66202a40);FrameLayout.LayoutParams overlay=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);canvas.addView(pad,overlay);
+        pad=new LinearLayout(this);pad.setOrientation(LinearLayout.VERTICAL);pad.setBackgroundColor(0x66202a40);FrameLayout.LayoutParams overlay=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);canvas.addView(pad,overlay);
         addKeys(new String[]{"W","A","S","D","Shift","Ctrl"},new String[]{"w","a","s","d","shift","ctrl"});
         addKeys(new String[]{"空格","E","R","Esc","左键","右键"},new String[]{"space","e","r","esc","mouse:left","mouse:right"});
         screen.setOnTouchListener((v,event)->touch(event));screen.setOnGenericMotionListener((v,e)->mouse(e));

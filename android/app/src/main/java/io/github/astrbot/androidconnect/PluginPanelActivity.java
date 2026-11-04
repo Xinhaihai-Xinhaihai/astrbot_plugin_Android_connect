@@ -23,13 +23,13 @@ public class PluginPanelActivity extends Activity {
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         api=new Api(new Prefs(this));
-        LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(24,12,24,12);root.setBackgroundColor(Color.rgb(245,246,250));
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(24,12,24,12);root.setBackgroundColor(Color.rgb(245,246,250));
         root.setOnApplyWindowInsetsListener((v,i)->{v.setPadding(24+i.getSystemWindowInsetLeft(),12+i.getSystemWindowInsetTop(),24+i.getSystemWindowInsetRight(),12+i.getSystemWindowInsetBottom());return i;});
         Button back=new Button(this);back.setText("返回控制页");back.setOnClickListener(v->finish());root.addView(back);
         TextView title=new TextView(this);title.setText("AstrBot 插件管理");title.setTextSize(25);root.addView(title);
         summary=new TextView(this);summary.setText("查看全部插件，按需启用或停用。连接插件保持开启。");root.addView(summary);
         refresh=new Button(this);refresh.setText("刷新插件列表");refresh.setOnClickListener(v->load(null));root.addView(refresh);
-        ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);load(null);
+        ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);load(null);
     }
     private void load(JSONObject change) {
         if(busy)return;busy=true;refresh.setEnabled(false);setEnabled(list,false);
