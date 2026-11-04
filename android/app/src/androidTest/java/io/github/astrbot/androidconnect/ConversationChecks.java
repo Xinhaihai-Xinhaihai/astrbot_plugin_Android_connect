@@ -46,14 +46,25 @@ final class ConversationChecks {
     }
     private static View view(MainActivity activity, String text) { return find(activity.getWindow().getDecorView(),text,false); }
     private static EditText input(MainActivity activity) { return (EditText)find(activity.getWindow().getDecorView(),"",true); }
+    private static Button findButton(View view, String label) {
+        if(view instanceof Button&&label.contentEquals(((Button)view).getText()))return (Button)view;
+        if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++) {
+            Button match=findButton(((ViewGroup)view).getChildAt(i),label);if(match!=null)return match;
+        }
+        return null;
+    }
+    private static Button button(MainActivity activity, String label) {
+        Button match=findButton(activity.getWindow().getDecorView(),label);
+        check(match!=null,"Missing button: "+label);return match;
+    }
     private static void click(MainActivity activity, String label) {
-        View button=view(activity,label);check(button instanceof Button,"Missing button: "+label);button.performClick();
+        button(activity,label).performClick();
     }
     private static boolean composerVisible(MainActivity app) {
         Rect inputArea=new Rect(),sendArea=new Rect(),navigationArea=new Rect();
         return input(app).getGlobalVisibleRect(inputArea)
-            &&view(app,"发送任务").getGlobalVisibleRect(sendArea)
-            &&view(app,"聊天").getGlobalVisibleRect(navigationArea)
+            &&button(app,"发送任务").getGlobalVisibleRect(sendArea)
+            &&button(app,"聊天").getGlobalVisibleRect(navigationArea)
             &&inputArea.height()>20&&sendArea.height()>20&&sendArea.bottom<=navigationArea.top;
     }
     private static void awaitUi(Instrumentation test, BooleanSupplier condition, String error) throws Exception {
