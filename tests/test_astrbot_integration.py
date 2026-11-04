@@ -34,17 +34,53 @@ async def test_real_sdk_chat_and_scoped_device_tools():
     assert await backend(job, [], bridge) == "hello"
     context.tool_loop_agent.assert_not_awaited()
     job.update(control=True, phone=True)
+    async def exercise_tools(**args):
+        names = {tool.name for tool in args["tools"].tools}
+        assert "android_desktop_screenshot" in names
+        assert "android_phone_inspect" in names
+        assert "android_task_complete" in names
+        if not config["allow_shell"]:
+            assert "android_desktop_shell" not in names
+        phone_tool = args["tools"].get_tool("android_phone_inspect")
+        assert await phone_tool.handler(args["event"]) == "phone result"
+        if config["allow_shell"]:
+            tool = args["tools"].get_tool("android_desktop_shell")
+            config["allow_shell"] = False
+            with pytest.raises(PermissionError):
+                await tool.handler(args["event"], command="echo test")
+        return SimpleNamespace(completion_text="done")
+    context.tool_loop_agent.side_effect = exercise_tools
     assert await backend(job, [], bridge) == "done"
     args = context.tool_loop_agent.await_args.kwargs
-    names = {tool.name for tool in args["tools"].tools}
-    assert "android_desktop_screenshot" in names
-    assert "android_phone_inspect" in names
-    assert "android_desktop_shell" not in names
-    phone_tool = args["tools"].get_tool("android_phone_inspect")
-    assert await phone_tool.handler(args["event"]) == "phone result"
+    assert "本轮任务只执行一次" in args["system_prompt"]
+    assert args["max_steps"] == 80
     config["allow_shell"] = True
     await backend(job, [], bridge)
-    tool = context.tool_loop_agent.await_args.kwargs["tools"].get_tool("android_desktop_shell")
-    config["allow_shell"] = False
-    with pytest.raises(PermissionError):
-        await tool.handler(args["event"], command="echo test")
+
+
+async def test_agent_round_blocks_repeated_hardware_operation():
+    import asyncio
+
+    from bridge.round_guard import RepeatedOperationError
+
+    context = SimpleNamespace(
+        get_current_chat_provider_id=AsyncMock(return_value="test-provider"),
+        persona_manager=SimpleNamespace(
+            get_default_persona_v3=AsyncMock(return_value=SimpleNamespace(system_prompt=""))
+        ),
+    )
+    desktop = SimpleNamespace(perform=AsyncMock(return_value={"ok": True}))
+    job = {"id": "guard-job", "session": "guard-session", "prompt": "输入一次", "control": True, "phone": False}
+    bridge = SimpleNamespace(check_control=lambda _: None, store=SimpleNamespace(audit=lambda *a, **kw: None))
+    async def run_tools(**args):
+        tool = args["tools"].get_tool("android_desktop_type_text")
+        await tool.handler(args["event"], text="只输入一次")
+        try:
+            await tool.handler(args["event"], text="只输入一次")
+        except RepeatedOperationError:
+            pass
+        await asyncio.sleep(30)
+    context.tool_loop_agent = AsyncMock(side_effect=run_tools)
+    with pytest.raises(RepeatedOperationError):
+        await AgentBackend(context, {}, desktop)(job, [], bridge)
+    assert desktop.perform.await_count == 1

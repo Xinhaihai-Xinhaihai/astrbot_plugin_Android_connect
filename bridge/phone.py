@@ -125,9 +125,10 @@ class PhoneBroker:
         if state and state.get("grant"):
             self.revoked_grants.add(state["grant"])
         self.abort(device=device)
-        for job in self.service.store.list(limit=100):
-            if job["phone"] and job["device"] == device:
-                await self.service.cancel_job(job["id"], "手机控制已关闭")
+        await self.service.cancel_jobs(
+            [job for job in self.service.store.active() if job["phone"] and job["device"] == device],
+            "手机控制已关闭",
+        )
         return web.json_response({"stopped": True})
 
     def stop_all(self):

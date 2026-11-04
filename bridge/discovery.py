@@ -27,7 +27,7 @@ class Discovery:
             "_astrbot-connect._tcp.local.",
             f"AstrBot-{host}._astrbot-connect._tcp.local.",
             addresses=list(addresses), port=port,
-            properties={"version": "0.1.2", "pairing": "pin"},
+            properties={"version": "0.2.0", "pairing": "pin"},
             server=f"{host}.local.",
         )
         await self.zeroconf.async_register_service(self.info, allow_name_change=True)

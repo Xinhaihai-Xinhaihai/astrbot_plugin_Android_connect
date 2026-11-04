@@ -39,6 +39,7 @@ class BridgeService:
         self.current_task = None
         self.current_job = None
         self.expiry_task = None
+        self.repeat_tasks = {}
         self.failures = OrderedDict()
         self.pair_code = ""
         self.pair_until = 0
@@ -53,7 +54,7 @@ class BridgeService:
                 web.post("/api/v1/jobs/{job_id}/cancel", self.cancel),
                 web.post("/api/v1/control", self.control),
                 web.post("/api/v1/stop", self.stop_all),
-            web.post("/api/v1/pair", self.pair),
+                web.post("/api/v1/pair", self.pair),
                 web.post("/api/v1/desktop", self.desktop_action),
                 web.post("/api/v1/devices/{device}/poll", self.phone.poll),
                 web.post("/api/v1/devices/{device}/commands/{command_id}", self.phone.result),
@@ -178,6 +179,9 @@ class BridgeService:
                 "max_control_hours": min(24, max(1, int(self.config.get("max_control_hours", 8)))),
                 "running_job": self.current_job,
                 "pending_jobs": self.queue.qsize(),
+                "repeat_modes": [1, 5, 10, 0],
+                "repeat_interval_seconds": self.repeat_delay(),
+                "waiting_jobs": len(self.repeat_tasks),
             }
         )
 
@@ -191,13 +195,18 @@ class BridgeService:
         item = self.store.get(request.match_info["job_id"])
         if not item:
             raise web.HTTPNotFound(reason="任务不存在")
-        return web.json_response({**item, "events": self.store.events(item["id"])})
+        return web.json_response({
+            **item, "events": self.store.events(item["id"]), "runs": self.store.runs(item["id"])
+        })
 
     async def submit(self, request):
         data = await self.body(request)
         job_id, session = data.get("id", ""), data.get("session", "")
         prompt, control = data.get("prompt", ""), data.get("control", False)
         phone, device = data.get("phone", False), data.get("device", "")
+        repeat_count = data.get("repeat_count", 1)
+        if type(repeat_count) is not int or repeat_count not in (1, 5, 10, 0):
+            raise ValueError("任务次数只能为 1、5、10，或 0（一直）")
         if not isinstance(phone, bool):
             raise ValueError("phone 必须为布尔值")
         if phone:
@@ -221,31 +230,47 @@ class BridgeService:
                 bool(old["control"]),
                 bool(old["phone"]),
                 old["device"],
-            ) != (session, prompt, control, phone, device):
+                old["repeat_count"],
+            ) != (session, prompt, control, phone, device, repeat_count):
                 raise web.HTTPConflict(reason="任务 ID 已被另一条消息使用")
             return web.json_response(old)
         if control and not self.is_control_enabled():
             raise web.HTTPForbidden(reason="请先开启电脑控制并设置授权时长")
         if phone and not self.phone.enabled(device):
             raise web.HTTPForbidden(reason="请先在手机开启手机控制并保持服务在线")
-        if self.queue.full():
+        if self.queue.full() or len(self.store.active()) >= 33:
             raise web.HTTPTooManyRequests(reason="任务队列已满，请稍后重试")
-        item = self.store.create(job_id, session, prompt, control, phone, device)
+        item = self.store.create(job_id, session, prompt, control, phone, device, repeat_count)
         self.queue.put_nowait(job_id)
-        self.store.audit("submitted", job_id, control=control)
+        self.store.audit("submitted", job_id, control=control, repeat_count=repeat_count)
         return web.json_response(item, status=202)
 
     async def cancel_job(self, job_id, reason="主人停止了任务"):
         item = self.store.get(job_id)
-        if item and item["state"] in ("queued", "running"):
+        await self.cancel_jobs([item] if item else [], reason)
+        return self.store.get(job_id)
+
+    async def cancel_jobs(self, items, reason):
+        pending = []
+        # Mark the entire batch before awaiting anything, so queued rounds cannot start mid-revocation.
+        for item in items:
+            if item["state"] not in ("queued", "running", "waiting"):
+                continue
+            job_id = item["id"]
             self.store.update(job_id, "cancelled", error=reason)
+            if item["state"] == "running" and item["runs_started"]:
+                self.store.finish_run(job_id, item["runs_started"], "cancelled", error=reason)
             self.store.audit("cancelled", job_id)
             self.phone.abort(job_id=job_id)
+            scheduled = self.repeat_tasks.pop(job_id, None)
+            if scheduled:
+                scheduled.cancel()
+                pending.append(scheduled)
             if self.current_job == job_id and self.current_task:
                 self.current_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await self.current_task
-        return self.store.get(job_id)
+                pending.append(self.current_task)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def cancel(self, request):
         item = await self.cancel_job(request.match_info["job_id"])
@@ -255,11 +280,10 @@ class BridgeService:
 
     async def revoke(self, all_jobs=False):
         self.control_until = 0
-        for item in self.store.list(limit=100):
-            if all_jobs or item["control"]:
-                await self.cancel_job(
-                    item["id"], "电脑控制授权已撤销或到期" if not all_jobs else "紧急停止"
-                )
+        await self.cancel_jobs(
+            [item for item in self.store.active() if all_jobs or item["control"]],
+            "电脑控制授权已撤销或到期" if not all_jobs else "紧急停止",
+        )
         self.store.audit("stop_all" if all_jobs else "control_disabled")
 
     async def expire_control(self):
@@ -303,20 +327,56 @@ class BridgeService:
         self.phone.stop_all()
         return web.json_response({"stopped": True})
 
+    def repeat_delay(self):
+        return max(1, min(3600, int(self.config.get("repeat_interval_seconds", 5))))
+
+    def schedule_repeat(self, job_id):
+        delay = self.repeat_delay()
+        self.store.update(job_id, "waiting", next_run_at=time.time() + delay)
+
+        async def enqueue():
+            try:
+                await asyncio.sleep(delay)
+                job = self.store.get(job_id)
+                if job and job["state"] == "waiting":
+                    # Waiting here retains cancellation and keeps other jobs ahead of this round.
+                    await self.queue.put(job_id)
+                    if self.store.get(job_id)["state"] == "waiting":
+                        self.store.update(job_id, "queued")
+            finally:
+                if self.repeat_tasks.get(job_id) is asyncio.current_task():
+                    self.repeat_tasks.pop(job_id, None)
+
+        self.repeat_tasks[job_id] = asyncio.create_task(enqueue())
+
+    def fail_round(self, job_id, number, reason):
+        saved = self.store.get(job_id)
+        state = "cancelled" if saved["state"] == "cancelled" else "failed"
+        error = saved["error"] if state == "cancelled" else reason
+        if number:
+            self.store.finish_run(job_id, number, state, error=error)
+        if state != "cancelled":
+            self.store.update(job_id, state, error=error)
+        self.store.audit("round_stopped", job_id, number=number, reason=error)
+
     async def work(self):
         while True:
             job_id = await self.queue.get()
+            number = 0
             try:
                 job = self.store.get(job_id)
                 if not job or job["state"] != "queued":
                     continue
                 self.store.prune(max(1, int(self.config.get("retention_days", 30))))
-                self.store.update(job_id, "running")
+                self.store.update(job_id, "running", error="")
                 self.current_job = job_id
                 if job["control"]:
                     self.check_control(job)
                 if job["phone"]:
                     self.phone.check(job)
+                job = self.store.begin_run(job_id)
+                number = job["runs_started"]
+                self.store.audit("round_started", job_id, number=number)
                 history = self.store.history(
                     job["session"], max(0, min(50, int(self.config.get("history_turns", 12))))
                 )
@@ -324,24 +384,32 @@ class BridgeService:
                 timeout = max(10, min(28800, int(self.config.get("task_timeout_seconds", 3600))))
                 result = await asyncio.wait_for(self.current_task, timeout)
                 if self.store.get(job_id)["state"] == "running":
-                    self.store.update(
-                        job_id, "completed", result=str(result or "任务已结束，模型未返回文本。")
-                    )
+                    result = str(result or "本轮已结束，模型未返回文本。")
+                    self.store.finish_run(job_id, number, "completed", result=result)
+                    self.store.audit("round_completed", job_id, number=number)
+                    job = self.store.get(job_id)
+                    if job["repeat_count"] == 0 or job["runs_completed"] < job["repeat_count"]:
+                        self.schedule_repeat(job_id)
+                    else:
+                        self.store.update(job_id, "completed", error="")
             except asyncio.CancelledError:
-                if self.store.get(job_id)["state"] == "running":
+                saved = self.store.get(job_id)
+                if saved["state"] == "running":
                     self.store.update(job_id, "cancelled", error="任务已停止")
+                if number:
+                    self.store.finish_run(job_id, number, "cancelled", error=saved["error"] or "任务已停止")
                 if asyncio.current_task().cancelling():
                     raise
             except TimeoutError:
-                self.store.update(
-                    job_id, "failed", error="任务超时，已停止。请拆分任务或调整执行时限。"
+                self.fail_round(
+                    job_id, number, "本轮超时，后续轮次已停止。请拆分任务或调整执行时限。"
                 )
             except PermissionError as exc:
-                self.store.update(job_id, "failed", error=str(exc))
+                self.fail_round(job_id, number, str(exc))
             except Exception:
                 log.exception("Android Connect job %s failed", job_id)
-                self.store.update(
-                    job_id, "failed", error="任务执行失败，请查看 AstrBot 日志和模型配置。"
+                self.fail_round(
+                    job_id, number, "本轮执行失败，后续轮次已停止。请查看 AstrBot 日志和模型配置。"
                 )
             finally:
                 self.current_job = None

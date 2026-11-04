@@ -45,14 +45,20 @@
     "default": 8
   },
   "task_timeout_seconds": {
-    "description": "单个任务最长执行秒数",
+    "description": "每轮任务最长执行秒数",
     "type": "int",
     "default": 3600
   },
   "max_agent_steps": {
-    "description": "单个任务最大 Agent 步数",
+    "description": "每轮最大 Agent 步数（不是任务执行次数）",
     "type": "int",
     "default": 80
+  },
+  "repeat_interval_seconds": {
+    "description": "多次任务的轮次间隔秒数",
+    "type": "int",
+    "default": 5,
+    "hint": "适用于 5 次、10 次和一直模式；范围 1–3600 秒。失败、超时、授权失效或停止后不继续下一轮。"
   },
   "history_turns": {
     "description": "发送给模型的历史对话轮数",

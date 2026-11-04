@@ -41,6 +41,8 @@ public class MainActivity extends Activity {
     private EditText message;
     private Button send, newChat;
     private CheckBox useDesktop, usePhone;
+    private RadioGroup repeatModes;
+    private int repeatCount = 1;
     private String page = "聊天", draft = "", lastFeed = "";
     private boolean connected, refreshing, posting, resumed, desktopWanted, phoneWanted;
     private JSONObject status = new JSONObject();
@@ -55,12 +57,16 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         prefs = new Prefs(this); api = new Api(prefs);
         page = prefs.url().isEmpty() ? "设置" : "聊天";
-        if (saved != null) { draft = saved.getString("draft", ""); page = saved.getString("page", page); }
+        if (saved != null) {
+            draft = saved.getString("draft", ""); page = saved.getString("page", page);
+            repeatCount = saved.getInt("repeat_count", 1);
+        }
         show(page);
     }
     @Override protected void onSaveInstanceState(Bundle out) {
         if (message != null) draft = message.getText().toString();
-        out.putString("draft", draft); out.putString("page", page); super.onSaveInstanceState(out);
+        out.putString("draft", draft); out.putString("page", page);
+        out.putInt("repeat_count", repeatCount); super.onSaveInstanceState(out);
     }
     @Override protected void onResume() { super.onResume(); resumed = true; handler.post(refreshLoop); }
     @Override protected void onPause() { resumed = false; handler.removeCallbacks(refreshLoop); super.onPause(); }
@@ -97,7 +103,7 @@ public class MainActivity extends Activity {
     }
     private void show(String selected) {
         if (message != null) draft=message.getText().toString();
-        message=null; feed=null; send=null; newChat=null; page=selected; lastFeed="";
+        message=null; feed=null; send=null; newChat=null; repeatModes=null; page=selected; lastFeed="";
         root=column(); root.setBackgroundColor(BG);
         root.setOnApplyWindowInsetsListener((v,insets)-> {
             root.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());
@@ -130,6 +136,17 @@ public class MainActivity extends Activity {
         usePhone=new CheckBox(this); usePhone.setText("可操控手机"); usePhone.setTextSize(12); usePhone.setChecked(phoneWanted);
         permissionRow.addView(useDesktop,new LinearLayout.LayoutParams(0,-2,1)); permissionRow.addView(usePhone,new LinearLayout.LayoutParams(0,-2,1)); intro.addView(permissionRow);
         useDesktop.setOnCheckedChangeListener((v,c)->desktopWanted=c); usePhone.setOnCheckedChangeListener((v,c)->phoneWanted=c);
+        intro.addView(text("任务次数",12,MUTED));
+        repeatModes=new RadioGroup(this);repeatModes.setOrientation(LinearLayout.HORIZONTAL);
+        for(int count:new int[]{1,5,10,0}) {
+            RadioButton option=new RadioButton(this);option.setId(View.generateViewId());option.setTag(count);
+            option.setText(count==0?"一直":count+" 次");option.setTextSize(12);option.setTextColor(INK);
+            option.setEnabled(!posting);option.setChecked(count==repeatCount);
+            option.setOnCheckedChangeListener((v,checked)->{if(checked)repeatCount=count;});
+            repeatModes.addView(option,new RadioGroup.LayoutParams(0,dp(44),1));
+        }
+        intro.addView(repeatModes);
+        intro.addView(text("按整条任务计次；一直模式可随时停止",11,MUTED));
         ScrollView scroll=new ScrollView(this); feed=column(); scroll.addView(feed); body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         renderFeed();
         LinearLayout composer=column(); composer.setPadding(0,dp(8),0,dp(8));
@@ -144,7 +161,7 @@ public class MainActivity extends Activity {
     }
     private void newConversation() {
         if(posting)return;
-        prefs.newSession(); prefs.put("pending",""); draft="";
+        prefs.newSession(); prefs.put("pending",""); draft=""; selectRepeatMode(1);
         if(message!=null)message.setText("");
         lastFeed=""; renderFeed();
         Toast.makeText(this,"新对话已创建",Toast.LENGTH_SHORT).show();
@@ -154,6 +171,19 @@ public class MainActivity extends Activity {
             if(keyboard!=null)keyboard.showSoftInput(message,InputMethodManager.SHOW_IMPLICIT);
         }
     }
+    private void selectRepeatMode(int count) {
+        repeatCount=count;
+        if(repeatModes!=null)for(int i=0;i<repeatModes.getChildCount();i++) {
+            RadioButton option=(RadioButton)repeatModes.getChildAt(i);
+            if(((Integer)option.getTag())==count){repeatModes.check(option.getId());break;}
+        }
+    }
+    private void setSubmitting(boolean value) {
+        posting=value;
+        if(send!=null)send.setEnabled(!value);
+        if(newChat!=null)newChat.setEnabled(!value);
+        if(repeatModes!=null)for(int i=0;i<repeatModes.getChildCount();i++)repeatModes.getChildAt(i).setEnabled(!value);
+    }
     private void tasks() {
         LinearLayout content=scrolling();
         LinearLayout summary=card(content,"执行记录","任务保存在电脑端；手机断开不会取消电脑任务。");
@@ -161,7 +191,13 @@ public class MainActivity extends Activity {
         feed=column(); content.addView(feed); renderFeed();
     }
     private String stateName(String state) {
-        return switch(state) {case "queued"->"等待执行";case "running"->"正在执行";case "completed"->"已完成";case "cancelled"->"已停止";case "interrupted"->"重启中断";default->"执行失败";};
+        return switch(state) {case "queued"->"等待执行";case "running"->"正在执行";case "waiting"->"等待下一次";case "completed"->"已完成";case "cancelled"->"已停止";case "interrupted"->"重启中断";default->"执行失败";};
+    }
+    private String repeatProgress(JSONObject job) {
+        int total=job.optInt("repeat_count",1),done=job.optInt("runs_completed",job.optString("state").equals("completed")?1:0);
+        String progress=total==0?"已完成 "+done+" 次 · 一直":"已完成 "+done+" / "+total+" 次";
+        if(job.optString("state").equals("running"))progress+=" · 第 "+job.optInt("runs_started",1)+" 次执行中";
+        return progress;
     }
     private String when(double timestamp) { return new SimpleDateFormat("MM-dd HH:mm",Locale.CHINA).format(new Date((long)(timestamp*1000))); }
     private void renderFeed() {
@@ -178,10 +214,13 @@ public class MainActivity extends Activity {
             TextView prompt=text(job.optString("prompt"),15,INK); prompt.setTextIsSelectable(true); c.addView(prompt);
             TextView badge=text(stateName(state)+(job.optInt("control")==1?"  ·  电脑":"")+(job.optInt("phone")==1?"  ·  手机":""),12,BLUE);
             badge.setPadding(0,dp(12),0,dp(8)); c.addView(badge);
-            String reply=job.optString("result"); if(reply.isEmpty()) reply=job.optString("error");
+            c.addView(text(repeatProgress(job),12,MUTED));
+            String reply=job.optString("result");
             if(!reply.isEmpty()) {TextView r=text(reply,14,INK); r.setTextIsSelectable(true); c.addView(r);}
+            String failure=job.optString("error");
+            if(!failure.isEmpty())c.addView(text(failure,13,Color.rgb(198,57,72)));
             c.addView(button("查看操作记录",()->details(job.optString("id"))));
-            if(state.equals("queued")||state.equals("running")) c.addView(button("停止这个任务",()->call(()->api.call("POST","/jobs/"+job.optString("id")+"/cancel",Api.json()),r->refresh(true))));
+            if(state.equals("queued")||state.equals("running")||state.equals("waiting")) c.addView(button("停止这个任务",()->call(()->api.call("POST","/jobs/"+job.optString("id")+"/cancel",Api.json()),r->refresh(true))));
         }
         if(shown==0) {
             boolean chatting=page.equals("聊天");
@@ -193,7 +232,13 @@ public class MainActivity extends Activity {
     }
     private void details(String id) {
         call(()->api.call("GET","/jobs/"+id,null),r->{
-            StringBuilder report=new StringBuilder(stateName(r.optString("state"))+"\n\n");
+            StringBuilder report=new StringBuilder(stateName(r.optString("state"))+"\n"+repeatProgress(r)+"\n\n");
+            JSONArray rounds=r.optJSONArray("runs");
+            if(rounds!=null)for(int i=0;i<rounds.length();i++){
+                JSONObject round=rounds.getJSONObject(i);
+                report.append("第 ").append(round.optInt("number")).append(" 次 · ").append(stateName(round.optString("state"))).append("\n")
+                    .append(round.optString("result")).append("\n").append(round.optString("error")).append("\n\n");
+            }
             JSONArray events=r.optJSONArray("events");
             if(events!=null)for(int i=events.length()-1;i>=0;i--){JSONObject e=events.getJSONObject(i);report.append(when(e.optDouble("created"))).append("  ").append(e.optString("action")).append("\n").append(e.optString("detail")).append("\n\n");}
             new AlertDialog.Builder(this).setTitle("操作记录").setMessage(report.toString()).setPositiveButton("关闭",null).show();
@@ -203,21 +248,26 @@ public class MainActivity extends Activity {
         String prompt=message.getText().toString().trim(); if(prompt.isEmpty()||posting)return;
         if(prefs.url().isEmpty()){error("请先前往“设置”，连接电脑后再发送消息。");return;}
         JSONObject job=Api.json("id",UUID.randomUUID().toString(),"session",prefs.id("session"),"prompt",prompt,
-            "control",desktopWanted,"phone",phoneWanted,"device",prefs.id("device"));
+            "control",desktopWanted,"phone",phoneWanted,"device",prefs.id("device"),"repeat_count",repeatCount);
         // Preserve the exact request ID across a timeout and an explicit retry.
         try {String pending=prefs.get("pending",""); if(!pending.isEmpty()) {
             JSONObject old=new JSONObject(pending);
             if(old.optString("prompt").equals(prompt)&&old.optString("session").equals(prefs.id("session"))
-               &&old.optBoolean("control")==desktopWanted&&old.optBoolean("phone")==phoneWanted)job=old;
+               &&old.optBoolean("control")==desktopWanted&&old.optBoolean("phone")==phoneWanted
+               &&old.optInt("repeat_count",1)==repeatCount)job=old;
         }}catch(Exception ignored){}
-        prefs.put("pending",job.toString()); final JSONObject request=job; posting=true; send.setEnabled(false); if(newChat!=null)newChat.setEnabled(false);
+        prefs.put("pending",job.toString()); final JSONObject request=job; setSubmitting(true);
         executor.execute(()->{
-            try {api.call("POST","/jobs",request);runOnUiThread(()->{
-                posting=false;prefs.put("pending","");
+            try {
+                JSONArray modes=api.call("GET","/status",null).optJSONArray("repeat_modes");boolean supported=false;
+                if(modes!=null)for(int i=0;i<modes.length();i++)if(modes.optInt(i,-1)==request.optInt("repeat_count",1))supported=true;
+                if(!supported)throw new Exception("电脑插件尚不支持任务次数，请先将电脑端 Android Connect 插件更新到 v0.2.0 或更高版本。");
+                api.call("POST","/jobs",request);runOnUiThread(()->{
+                setSubmitting(false);prefs.put("pending","");selectRepeatMode(1);
                 if(message!=null&&message.getText().toString().trim().equals(prompt)){draft="";message.setText("");}
                 else if(message==null&&draft.trim().equals(prompt))draft="";
-                if(send!=null)send.setEnabled(true);if(newChat!=null)newChat.setEnabled(true);refresh(true);
-            });}catch(Exception e){runOnUiThread(()->{posting=false;if(send!=null)send.setEnabled(true);if(newChat!=null)newChat.setEnabled(true);error(e.getMessage()+"\n消息已保留，再次发送相同内容会使用原任务 ID。");});}
+                refresh(true);
+            });}catch(Exception e){runOnUiThread(()->{setSubmitting(false);error(e.getMessage()+"\n消息已保留，使用相同次数模式重发会复用原任务 ID。");});}
         });
     }
     private void controls() {
@@ -282,7 +332,7 @@ public class MainActivity extends Activity {
         LinearLayout access=card(content,"授权与隐私","电脑、手机与 PowerShell 各有独立总开关，默认关闭。");
         access.addView(button("打开手机无障碍设置",()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
         access.addView(text("密钥使用 Android Keystore 加密保存。聊天和任务记录保存在电脑端。截图与界面文本可能发送给 AstrBot 配置的模型。手机锁屏或系统授权界面不可被 Agent 绕过。",13,MUTED));
-        card(content,"AstrBot Connect 0.1.2","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
+        card(content,"AstrBot Connect 0.2.0","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
     }
     private void remoteDesktop() {
         if(!status.optBoolean("desktop_enabled")){error("请先开启电脑控制");return;}

@@ -43,6 +43,13 @@ async def settle(bridge):
     await asyncio.wait_for(bridge.queue.join(), 2)
 
 
+async def wait_state(bridge, job_id, state):
+    async def wait():
+        while bridge.store.get(job_id)["state"] != state:
+            await asyncio.sleep(0.005)
+    await asyncio.wait_for(wait(), 3)
+
+
 async def test_auth_and_invalid_payload(harness):
     bridge, client, _, _ = harness
     for route in ("/status", "/jobs"):
@@ -201,3 +208,140 @@ async def test_emergency_stop_cannot_be_undone_by_old_phone_heartbeat(harness):
     )
     assert (await response.json())["stopped"] is True
     assert not bridge.phone.enabled("phone-test")
+
+
+@pytest.mark.parametrize("count", [1, 5, 10])
+async def test_exact_repeat_counts_and_retry_does_not_add_rounds(harness, count):
+    bridge, client, calls, _ = harness
+    bridge.repeat_delay = lambda: 0.005
+    job = request(repeat_count=count)
+    responses = await asyncio.gather(*[
+        client.post("/api/v1/jobs", json=job) for _ in range(12)
+    ])
+    assert sum(response.status == 202 for response in responses) == 1
+    assert all(response.status in (200, 202) for response in responses)
+    await wait_state(bridge, job["id"], "completed")
+    await client.post("/api/v1/jobs", json=job)
+    bridge.queue.put_nowait(job["id"])
+    await settle(bridge)
+    assert len(calls) == count
+    assert [call[0]["runs_started"] for call in calls] == list(range(1, count + 1))
+    saved = bridge.store.get(job["id"])
+    assert saved["runs_completed"] == count
+    assert saved["runs_started"] == count
+    detail = await (await client.get("/api/v1/jobs/" + job["id"])).json()
+    assert len(detail["runs"]) == count
+    assert all(item["state"] == "completed" for item in detail["runs"])
+    conflict = {**job, "repeat_count": 10 if count != 10 else 1}
+    assert (await client.post("/api/v1/jobs", json=conflict)).status == 409
+    assert not bridge.repeat_tasks
+
+
+@pytest.mark.parametrize("count", [-1, 2, 100, True, False, "5", 5.0, None])
+async def test_invalid_repeat_mode_is_rejected(harness, count):
+    bridge, client, calls, _ = harness
+    assert (await client.post("/api/v1/jobs", json=request(repeat_count=count))).status == 400
+    assert not bridge.store.active()
+    assert not calls
+
+
+async def test_forever_yields_to_other_jobs_and_can_be_stopped(harness):
+    bridge, client, calls, _ = harness
+    bridge.repeat_delay = lambda: 0.03
+    job = request(repeat_count=0)
+    await client.post("/api/v1/jobs", json=job)
+    await wait_state(bridge, job["id"], "waiting")
+    other = request(prompt="另一个任务", session="another-session")
+    await client.post("/api/v1/jobs", json=other)
+    await wait_state(bridge, other["id"], "completed")
+    async def two_rounds():
+        while bridge.store.get(job["id"])["runs_completed"] < 2:
+            await asyncio.sleep(0.005)
+    await asyncio.wait_for(two_rounds(), 2)
+    await client.post("/api/v1/jobs/" + job["id"] + "/cancel", json={})
+    count = len(calls)
+    await asyncio.sleep(0.08)
+    assert len(calls) == count
+    assert bridge.store.get(job["id"])["state"] == "cancelled"
+    assert bridge.store.get(job["id"])["result"] == "处理完成"
+    assert not bridge.repeat_tasks
+
+
+@pytest.mark.parametrize("stop", ["desktop", "phone", "all"])
+async def test_revoke_also_cancels_waiting_rounds(harness, stop):
+    bridge, client, calls, _ = harness
+    bridge.repeat_delay = lambda: 60
+    await client.post("/api/v1/control", json={"enabled": True})
+    bridge.phone.devices["phone-test"] = {"enabled": True, "seen": time.monotonic()}
+    job = request(repeat_count=5, control=True, phone=True, device="phone-test")
+    await client.post("/api/v1/jobs", json=job)
+    await wait_state(bridge, job["id"], "waiting")
+    scheduled = bridge.repeat_tasks[job["id"]]
+    if stop == "desktop":
+        await client.post("/api/v1/control", json={"enabled": False})
+    elif stop == "phone":
+        await client.post("/api/v1/devices/phone-test/disable", json={})
+    else:
+        await client.post("/api/v1/stop", json={})
+    assert bridge.store.get(job["id"])["state"] == "cancelled"
+    assert bridge.store.get(job["id"])["runs_completed"] == 1
+    assert len(calls) == 1
+    assert scheduled.done()
+    assert not bridge.repeat_tasks
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("failed"), TimeoutError(), PermissionError("blocked")])
+async def test_failed_round_stops_remaining_rounds(harness, failure):
+    bridge, client, calls, _ = harness
+    bridge.repeat_delay = lambda: 0.005
+    async def backend(job, history, service):
+        calls.append((job, history))
+        if job["runs_started"] == 2:
+            raise failure
+        return "第一轮结果"
+    bridge.backend = backend
+    job = request(repeat_count=10)
+    await client.post("/api/v1/jobs", json=job)
+    await wait_state(bridge, job["id"], "failed")
+    assert len(calls) == 2
+    assert bridge.store.get(job["id"])["runs_completed"] == 1
+    assert bridge.store.get(job["id"])["result"] == "第一轮结果"
+    assert [item["state"] for item in bridge.store.runs(job["id"])] == ["failed", "completed"]
+    assert not bridge.repeat_tasks
+
+
+def test_waiting_rounds_do_not_restart_and_results_are_preserved(tmp_path):
+    path = tmp_path / "repeat.db"
+    store = Store(path)
+    store.create("repeat-job", "session-test", "work", False, repeat_count=0)
+    store.update("repeat-job", "running")
+    store.begin_run("repeat-job")
+    store.finish_run("repeat-job", 1, "completed", result="一次结果")
+    store.update("repeat-job", "waiting", next_run_at=time.time() + 5)
+    store.close()
+    reopened = Store(path)
+    job = reopened.get("repeat-job")
+    assert job["state"] == "interrupted"
+    assert job["runs_completed"] == 1
+    assert job["result"] == "一次结果"
+    assert reopened.runs("repeat-job")[0]["state"] == "completed"
+    assert not reopened.active()
+    reopened.close()
+
+
+def test_existing_database_migrates_without_losing_jobs(tmp_path):
+    import sqlite3
+    path = tmp_path / "legacy.db"
+    db = sqlite3.connect(path)
+    db.executescript("""
+        CREATE TABLE jobs (
+            id TEXT PRIMARY KEY,session TEXT,prompt TEXT,control INTEGER,phone INTEGER,
+            device TEXT,state TEXT,result TEXT,error TEXT,created REAL,updated REAL);
+        INSERT INTO jobs VALUES ('legacy-job','old-session','旧消息',0,0,'','completed','旧回复','',1,1);
+    """)
+    db.close()
+    store = Store(path)
+    job = store.get("legacy-job")
+    assert (job["repeat_count"], job["runs_completed"], job["runs_started"]) == (1, 1, 1)
+    assert job["result"] == "旧回复"
+    store.close()

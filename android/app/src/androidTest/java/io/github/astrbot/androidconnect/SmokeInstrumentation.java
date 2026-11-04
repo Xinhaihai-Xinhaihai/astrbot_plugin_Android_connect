@@ -44,7 +44,7 @@ public class SmokeInstrumentation extends Instrumentation {
             }
             runOnMainSync(activity::finish);
             ConversationChecks.run(this);
-            results.putString("stream","PASS: four navigation pages, endpoint validation and new conversation lifecycle\n");finish(0,results);
+            results.putString("stream","PASS: four navigation pages, endpoint validation, new conversation lifecycle and four repeat modes\n");finish(0,results);
         }catch(Exception e){results.putString("stream","FAIL: "+e+"\n");finish(1,results);}
     }
 }

@@ -7,10 +7,15 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.RadioButton;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -76,9 +81,12 @@ final class ConversationChecks {
             });
             check(server.submitted.await(10,TimeUnit.SECONDS),"No message reached the bridge");
             check(prefs.id("session").equals(server.request.getString("session")),"Message used the wrong conversation");
+            check(server.request.getInt("repeat_count")==1,"Default task mode was not one");
             String activeSession=prefs.id("session");
             test.runOnMainSync(()->{
                 check(!view(app,"新对话").isEnabled(),"Conversation switch was enabled while submitting");
+                for(String mode:new String[]{"1 次","5 次","10 次","一直"})
+                    check(!view(app,mode).isEnabled(),"Repeat mode changed during submission");
                 click(app,"新对话");
                 check(activeSession.equals(prefs.id("session")),"Conversation changed while submitting");
                 input(app).setText("发送期间写的新草稿");
@@ -94,6 +102,33 @@ final class ConversationChecks {
                 check(view(app,"新对话已创建")!=null,"Repeated new conversation has no visible feedback");
                 check(view(app,"模拟回复")==null,"Previous response leaked into another conversation");
             });
+            for(int count:new int[]{5,10,0}) {
+                int before=server.submissions;
+                test.runOnMainSync(()->{
+                    check(((RadioButton)view(app,"1 次")).isChecked(),"Next task did not default to one");
+                    click(app,count==0?"一直":count+" 次");
+                    input(app).setText("测试次数 "+count);click(app,"发送任务");
+                });
+                awaitUi(test,()->server.submissions>before&&view(app,"发送任务").isEnabled(),"Repeat mode did not submit");
+                check(server.request.getInt("repeat_count")==count,"Wrong repeat count reached the bridge");
+                String progress=count==0?"已完成 2 次 · 一直":"已完成 "+count+" / "+count+" 次";
+                awaitUi(test,()->view(app,progress)!=null,"Repeat progress did not render");
+                test.runOnMainSync(()->check(((RadioButton)view(app,"1 次")).isChecked(),"Successful send did not reset to one"));
+                if(count==0) {
+                    test.runOnMainSync(()->{
+                        check(view(app,"停止这个任务")!=null,"Waiting loop has no stop button");
+                        try {
+                            View decor=app.getWindow().getDecorView();
+                            Bitmap bitmap=Bitmap.createBitmap(decor.getWidth(),decor.getHeight(),Bitmap.Config.ARGB_8888);
+                            decor.draw(new Canvas(bitmap));
+                            File dir=new File(test.getTargetContext().getExternalFilesDir(null),"screenshots");dir.mkdirs();
+                            try(FileOutputStream output=new FileOutputStream(new File(dir,"次数模式.png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,output);}
+                        } catch(Exception e){throw new RuntimeException(e);}
+                        click(app,"停止这个任务");
+                    });
+                    awaitUi(test,()->server.cancellations==1&&view(app,"已停止")!=null,"Loop cancellation did not reach the bridge");
+                }
+            }
         } finally {
             if(activity!=null){MainActivity app=activity;test.runOnMainSync(app::finish);}
             prefs.put("url",oldUrl);prefs.token(oldToken);prefs.put("session",oldSession);
@@ -105,6 +140,7 @@ final class ConversationChecks {
         private final ExecutorService workers=Executors.newCachedThreadPool();
         final CountDownLatch submitted=new CountDownLatch(1),release=new CountDownLatch(1);
         volatile JSONObject request;
+        volatile int submissions,cancellations;
         private volatile JSONArray jobs;
         MockBridge(String session) throws Exception {
             jobs=new JSONArray().put(Api.json("id",UUID.randomUUID().toString(),"session",session,
@@ -132,12 +168,19 @@ final class ConversationChecks {
                 for(int offset=0;offset<body.length;){int read=stream.read(body,offset,body.length-offset);if(read<0)throw new IllegalStateException("Truncated body");offset+=read;}
                 JSONObject response=Api.json();
                 if(header.startsWith("POST /api/v1/jobs ")) {
-                    request=new JSONObject(new String(body,StandardCharsets.UTF_8));submitted.countDown();
+                    request=new JSONObject(new String(body,StandardCharsets.UTF_8));submissions++;submitted.countDown();
                     if(!release.await(12,TimeUnit.SECONDS))throw new IllegalStateException("Reply was never released");
                     JSONObject job=new JSONObject(request.toString());
-                    job.put("state","completed").put("result","模拟回复").put("created",System.currentTimeMillis()/1000.0);
+                    int count=job.optInt("repeat_count",1);
+                    job.put("state",count==0?"waiting":"completed").put("result","模拟回复").put("created",System.currentTimeMillis()/1000.0)
+                        .put("runs_completed",count==0?2:count).put("runs_started",count==0?2:count);
                     jobs=new JSONArray().put(job).put(jobs.getJSONObject(0));response=job;
                 } else if(header.startsWith("GET /api/v1/jobs "))response=Api.json("jobs",jobs);
+                else if(header.startsWith("GET /api/v1/status "))response=Api.json("repeat_modes",new JSONArray().put(1).put(5).put(10).put(0));
+                else if(header.startsWith("POST /api/v1/jobs/")&&header.contains("/cancel ")) {
+                    JSONObject cancelled=new JSONObject(jobs.getJSONObject(0).toString()).put("state","cancelled");
+                    jobs=new JSONArray().put(cancelled).put(jobs.getJSONObject(1));response=cancelled;cancellations++;
+                }
                 byte[] json=response.toString().getBytes(StandardCharsets.UTF_8);
                 String headers="HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "+json.length+"\r\n\r\n";
                 socket.getOutputStream().write(headers.getBytes(StandardCharsets.US_ASCII));socket.getOutputStream().write(json);socket.getOutputStream().flush();
