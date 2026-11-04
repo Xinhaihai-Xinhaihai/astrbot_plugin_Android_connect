@@ -13,6 +13,7 @@ import java.util.function.BooleanSupplier;
 import org.json.JSONObject;
 
 final class RemoteChecks {
+    static ImageView imageView(View view){if(view instanceof ImageView)return (ImageView)view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){ImageView image=imageView(((ViewGroup)view).getChildAt(i));if(image!=null)return image;}return null;}
     static Button find(View view,String label){
         if(view instanceof Button&&label.contentEquals(((Button)view).getText()))return (Button)view;
         if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){Button found=find(((ViewGroup)view).getChildAt(i),label);if(found!=null)return found;}return null;
@@ -54,7 +55,7 @@ final class RemoteChecks {
                 MotionEvent.PointerProperties properties=new MotionEvent.PointerProperties();properties.id=0;properties.toolType=MotionEvent.TOOL_TYPE_MOUSE;
                 MotionEvent.PointerCoords position=new MotionEvent.PointerCoords();position.x=300;position.y=150;position.setAxisValue(MotionEvent.AXIS_VSCROLL,1);
                 long now=SystemClock.uptimeMillis();MotionEvent mouse=MotionEvent.obtain(now,now,MotionEvent.ACTION_SCROLL,1,new MotionEvent.PointerProperties[]{properties},new MotionEvent.PointerCoords[]{position},0,0,1,1,3,0,InputDevice.SOURCE_MOUSE,0);
-                desktop.dispatchGenericMotionEvent(mouse);mouse.recycle();
+                imageView(desktop.getWindow().getDecorView()).dispatchGenericMotionEvent(mouse);mouse.recycle();
             });
             await(test,()->server.inputHistory.stream().anyMatch(s->s.contains("\"scroll\":1")),"External mouse wheel missing");
             screenshot(test,desktop,"横屏遥控");int before=server.releases;test.runOnMainSync(desktop::finish);activity=null;
