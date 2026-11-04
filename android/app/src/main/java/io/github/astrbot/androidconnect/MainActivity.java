@@ -125,8 +125,8 @@ public class MainActivity extends Activity {
     private void chat() {
         LinearLayout intro=card(body,"把想做的事，交给 AstrBot","手机发送 · 电脑执行 · 随时回来查看结果");
         LinearLayout permissionRow=new LinearLayout(this);
-        useDesktop=new CheckBox(this); useDesktop.setText("本次可操作电脑"); useDesktop.setTextSize(12); useDesktop.setChecked(desktopWanted);
-        usePhone=new CheckBox(this); usePhone.setText("本次可操作手机"); usePhone.setTextSize(12); usePhone.setChecked(phoneWanted);
+        useDesktop=new CheckBox(this); useDesktop.setText("可操控电脑"); useDesktop.setTextSize(12); useDesktop.setChecked(desktopWanted);
+        usePhone=new CheckBox(this); usePhone.setText("可操控手机"); usePhone.setTextSize(12); usePhone.setChecked(phoneWanted);
         permissionRow.addView(useDesktop,new LinearLayout.LayoutParams(0,-2,1)); permissionRow.addView(usePhone,new LinearLayout.LayoutParams(0,-2,1)); intro.addView(permissionRow);
         useDesktop.setOnCheckedChangeListener((v,c)->desktopWanted=c); usePhone.setOnCheckedChangeListener((v,c)->phoneWanted=c);
         ScrollView scroll=new ScrollView(this); feed=column(); scroll.addView(feed); body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
@@ -259,7 +259,7 @@ public class MainActivity extends Activity {
         LinearLayout access=card(content,"授权与隐私","电脑、手机与 PowerShell 各有独立总开关，默认关闭。");
         access.addView(button("打开手机无障碍设置",()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
         access.addView(text("密钥使用 Android Keystore 加密保存。聊天和任务记录保存在电脑端。截图与界面文本可能发送给 AstrBot 配置的模型。手机锁屏或系统授权界面不可被 Agent 绕过。",13,MUTED));
-        card(content,"AstrBot Connect 0.1.0","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
+        card(content,"AstrBot Connect 0.1.1","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
     }
     private void remoteDesktop() {
         if(!status.optBoolean("desktop_enabled")){error("请先开启电脑控制");return;}
