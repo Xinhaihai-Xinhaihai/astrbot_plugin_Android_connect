@@ -49,6 +49,13 @@ final class ConversationChecks {
     private static void click(MainActivity activity, String label) {
         View button=view(activity,label);check(button instanceof Button,"Missing button: "+label);button.performClick();
     }
+    private static boolean composerVisible(MainActivity app) {
+        Rect inputArea=new Rect(),sendArea=new Rect(),navigationArea=new Rect();
+        return input(app).getGlobalVisibleRect(inputArea)
+            &&view(app,"发送任务").getGlobalVisibleRect(sendArea)
+            &&view(app,"聊天").getGlobalVisibleRect(navigationArea)
+            &&inputArea.height()>20&&sendArea.height()>20&&sendArea.bottom<=navigationArea.top;
+    }
     private static void awaitUi(Instrumentation test, BooleanSupplier condition, String error) throws Exception {
         long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
         while(System.nanoTime()<deadline) {
@@ -84,13 +91,9 @@ final class ConversationChecks {
             check(prefs.id("session").equals(server.request.getString("session")),"Message used the wrong conversation");
             check(server.request.getInt("repeat_count")==1,"Default task mode was not one");
             String activeSession=prefs.id("session");
+            Thread.sleep(350);
+            awaitUi(test,()->composerVisible(app),"Composer is hidden or overlaps navigation while keyboard is open");
             test.runOnMainSync(()->{
-                Rect inputArea=new Rect(),sendArea=new Rect(),navigationArea=new Rect();
-                check(input(app).getGlobalVisibleRect(inputArea),"Keyboard hid the message input");
-                check(view(app,"发送任务").getGlobalVisibleRect(sendArea),"Keyboard hid the send button");
-                check(view(app,"聊天").getGlobalVisibleRect(navigationArea),"Keyboard hid navigation");
-                check(inputArea.height()>20&&sendArea.height()>20&&sendArea.bottom<=navigationArea.top,
-                    "Composer overlaps navigation while the keyboard is open");
                 check(!view(app,"新对话").isEnabled(),"Conversation switch was enabled while submitting");
                 for(String mode:new String[]{"1 次","5 次","10 次","一直"})
                     check(!view(app,mode).isEnabled(),"Repeat mode changed during submission");
