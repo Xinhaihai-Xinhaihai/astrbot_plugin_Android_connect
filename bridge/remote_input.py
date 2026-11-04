@@ -1,6 +1,7 @@
 """Exclusive input lease: full key states, ordered packets and disconnect release."""
 
 import asyncio
+import logging
 import math
 import time
 
@@ -98,7 +99,10 @@ class RemoteInput:
             await asyncio.sleep(0.25)
             async with self.lock:
                 if (self.session or self.keys or self.buttons) and (not self.allowed() or time.monotonic() >= self.deadline):
-                    await self._release()
+                    try:
+                        await self._release()
+                    except Exception:
+                        logging.getLogger(__name__).exception("Remote input release failed; retrying")
 
     async def close(self):
         if self.watchdog:

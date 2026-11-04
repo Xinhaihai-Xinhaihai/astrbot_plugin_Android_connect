@@ -6,6 +6,7 @@ import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.hardware.input.InputManager;
 import android.graphics.*;
+import android.graphics.drawable.GradientDrawable;
 import android.os.*;
 import android.util.Base64;
 import android.view.*;
@@ -27,7 +28,7 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
     private final Runnable frames=new Runnable(){public void run(){if(resumed){if(live)capture();handler.postDelayed(this,frameDelay);}}};
     private final Runnable stick=new Runnable(){public void run(){if(resumed){if(inputReady)input.move(stickX*18,stickY*18);handler.postDelayed(this,50);}}};
     private int dp(int v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
-    private Button button(String title,Runnable action){Button b=new Button(this);b.setText(title);b.setTextSize(12);b.setAllCaps(false);b.setOnClickListener(v->action.run());return b;}
+    private Button button(String title,Runnable action){Button b=new Button(this);b.setText(title);b.setTextSize(12);b.setAllCaps(false);b.setTextColor(Color.WHITE);GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(46,60,91));bg.setCornerRadius(dp(10));b.setBackground(bg);b.setPadding(dp(10),dp(4),dp(10),dp(4));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,dp(44));lp.setMargins(dp(3),dp(4),dp(3),dp(4));b.setLayoutParams(lp);b.setOnClickListener(v->action.run());return b;}
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE|WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs=new Prefs(this);api=new Api(prefs);loadMappings();
@@ -53,7 +54,7 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
         LinearLayout row=new LinearLayout(this);pad.addView(row);
         for(int i=0;i<labels.length;i++){
             final String action=actions[i],source="virtual:"+action;Button b=button(labels[i],()->{});b.setAlpha(.8f);
-            b.setOnTouchListener((v,e)->{if(e.getActionMasked()==MotionEvent.ACTION_DOWN){hold(source,action,true);v.setPressed(true);}else if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){hold(source,action,false);v.setPressed(false);}return true;});row.addView(b,new LinearLayout.LayoutParams(0,dp(42),1));
+            b.setOnTouchListener((v,e)->{if(e.getActionMasked()==MotionEvent.ACTION_DOWN){hold(source,action,true);v.setPressed(true);v.setAlpha(1);}else if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){hold(source,action,false);v.setPressed(false);v.setAlpha(.8f);}return true;});LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(42),1);lp.setMargins(dp(3),dp(3),dp(3),dp(3));row.addView(b,lp);
         }
     }
     private void hold(String source,String action,boolean down){if(!inputReady)return;try{input.hold(source,action,down);}catch(Exception e){fail(e.getMessage());}}
