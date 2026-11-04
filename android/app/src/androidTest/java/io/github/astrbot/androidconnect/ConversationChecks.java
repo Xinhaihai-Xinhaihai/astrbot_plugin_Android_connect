@@ -10,6 +10,7 @@ import android.widget.TextView;
 import android.widget.RadioButton;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Rect;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
@@ -84,6 +85,12 @@ final class ConversationChecks {
             check(server.request.getInt("repeat_count")==1,"Default task mode was not one");
             String activeSession=prefs.id("session");
             test.runOnMainSync(()->{
+                Rect inputArea=new Rect(),sendArea=new Rect(),navigationArea=new Rect();
+                check(input(app).getGlobalVisibleRect(inputArea),"Keyboard hid the message input");
+                check(view(app,"发送任务").getGlobalVisibleRect(sendArea),"Keyboard hid the send button");
+                check(view(app,"聊天").getGlobalVisibleRect(navigationArea),"Keyboard hid navigation");
+                check(inputArea.height()>20&&sendArea.height()>20&&sendArea.bottom<=navigationArea.top,
+                    "Composer overlaps navigation while the keyboard is open");
                 check(!view(app,"新对话").isEnabled(),"Conversation switch was enabled while submitting");
                 for(String mode:new String[]{"1 次","5 次","10 次","一直"})
                     check(!view(app,mode).isEnabled(),"Repeat mode changed during submission");
@@ -115,6 +122,7 @@ final class ConversationChecks {
                 awaitUi(test,()->view(app,progress)!=null,"Repeat progress did not render");
                 test.runOnMainSync(()->check(((RadioButton)view(app,"1 次")).isChecked(),"Successful send did not reset to one"));
                 if(count==0) {
+                    test.waitForIdleSync();Thread.sleep(300);
                     test.runOnMainSync(()->{
                         check(view(app,"停止这个任务")!=null,"Waiting loop has no stop button");
                         try {

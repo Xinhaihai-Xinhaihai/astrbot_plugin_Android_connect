@@ -130,7 +130,9 @@ public class MainActivity extends Activity {
         LinearLayout content=column(); scroll.addView(content); body.addView(scroll,new LinearLayout.LayoutParams(-1,-1)); return content;
     }
     private void chat() {
-        LinearLayout intro=card(body,"把想做的事，交给 AstrBot","手机发送 · 电脑执行 · 随时回来查看结果");
+        ScrollView scroll=new ScrollView(this);LinearLayout conversation=column();scroll.addView(conversation);
+        body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout intro=card(conversation,"把想做的事，交给 AstrBot","手机发送 · 电脑执行 · 随时回来查看结果");
         LinearLayout permissionRow=new LinearLayout(this);
         useDesktop=new CheckBox(this); useDesktop.setText("可操控电脑"); useDesktop.setTextSize(12); useDesktop.setChecked(desktopWanted);
         usePhone=new CheckBox(this); usePhone.setText("可操控手机"); usePhone.setTextSize(12); usePhone.setChecked(phoneWanted);
@@ -147,7 +149,7 @@ public class MainActivity extends Activity {
         }
         intro.addView(repeatModes);
         intro.addView(text("按整条任务计次；一直模式可随时停止",11,MUTED));
-        ScrollView scroll=new ScrollView(this); feed=column(); scroll.addView(feed); body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        feed=column();conversation.addView(feed);
         renderFeed();
         LinearLayout composer=column(); composer.setPadding(0,dp(8),0,dp(8));
         message=new EditText(this); message.setTextSize(15); message.setMinLines(2); message.setMaxLines(5); message.setGravity(Gravity.TOP);
@@ -264,7 +266,12 @@ public class MainActivity extends Activity {
                 if(!supported)throw new Exception("电脑插件尚不支持任务次数，请先将电脑端 Android Connect 插件更新到 v0.2.0 或更高版本。");
                 api.call("POST","/jobs",request);runOnUiThread(()->{
                 setSubmitting(false);prefs.put("pending","");selectRepeatMode(1);
-                if(message!=null&&message.getText().toString().trim().equals(prompt)){draft="";message.setText("");}
+                if(message!=null&&message.getText().toString().trim().equals(prompt)){
+                    draft="";message.setText("");
+                    InputMethodManager keyboard=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
+                    if(keyboard!=null)keyboard.hideSoftInputFromWindow(message.getWindowToken(),0);
+                    message.clearFocus();
+                }
                 else if(message==null&&draft.trim().equals(prompt))draft="";
                 refresh(true);
             });}catch(Exception e){runOnUiThread(()->{setSubmitting(false);error(e.getMessage()+"\n消息已保留，使用相同次数模式重发会复用原任务 ID。");});}
