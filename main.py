@@ -7,6 +7,8 @@ from astrbot.api.star import Context, Star, StarTools
 from .bridge.agent import AgentBackend
 from .bridge.desktop import Desktop
 from .bridge.discovery import Discovery
+from .bridge.panel import PluginPanel
+from .bridge.remote_input import RemoteInput
 from .bridge.service import BridgeService
 
 
@@ -27,6 +29,8 @@ class AndroidConnectPlugin(Star):
         (directory / "token.txt").write_text(self.config["api_token"], encoding="utf-8")
         backend = AgentBackend(self.context, self.config, Desktop())
         service = BridgeService(self.config, directory, backend, backend.manual_desktop)
+        service.panel = PluginPanel(self.context)
+        service.remote_input = RemoteInput(backend.desktop, service.is_control_enabled)
         await service.start()
         self.bridge = service
         if self.config.get("enable_pairing", False):

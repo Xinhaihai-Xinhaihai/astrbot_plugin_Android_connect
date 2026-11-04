@@ -157,12 +157,16 @@ final class ConversationChecks {
             prefs.put("session_started",oldStarted);prefs.put("pending",oldPending);
         }
     }
-    private static final class MockBridge implements AutoCloseable {
+    static final class MockBridge implements AutoCloseable {
         private final ServerSocket listener;
         private final ExecutorService workers=Executors.newCachedThreadPool();
         final CountDownLatch submitted=new CountDownLatch(1),release=new CountDownLatch(1);
         volatile JSONObject request;
         volatile int submissions,cancellations;
+        volatile int releases;
+        volatile boolean pluginEnabled=true;
+        volatile JSONObject latestInput;
+        final java.util.List<String> inputHistory=new java.util.concurrent.CopyOnWriteArrayList<>();
         private volatile JSONArray jobs;
         MockBridge(String session) throws Exception {
             jobs=new JSONArray().put(Api.json("id",UUID.randomUUID().toString(),"session",session,
@@ -198,7 +202,18 @@ final class ConversationChecks {
                         .put("runs_completed",count==0?2:count).put("runs_started",count==0?2:count);
                     jobs=new JSONArray().put(job).put(jobs.getJSONObject(0));response=job;
                 } else if(header.startsWith("GET /api/v1/jobs "))response=Api.json("jobs",jobs);
-                else if(header.startsWith("GET /api/v1/status "))response=Api.json("repeat_modes",new JSONArray().put(1).put(5).put(10).put(0));
+                else if(header.startsWith("GET /api/v1/status "))response=Api.json("repeat_modes",new JSONArray().put(1).put(5).put(10).put(0),"desktop_enabled",true,"desktop_input",true);
+                else if(header.startsWith("GET /api/v1/panel/plugins ")||header.startsWith("POST /api/v1/panel/plugins ")) {
+                    if(header.startsWith("POST"))pluginEnabled=new JSONObject(new String(body,StandardCharsets.UTF_8)).getBoolean("enabled");
+                    response=Api.json("plugins",new JSONArray().put(Api.json("name","example","display_name","示例插件","description","用于验证远程插件开关","version","1.0","enabled",pluginEnabled,"protected",false)).put(Api.json("name","astrbot_plugin_Android_connect","display_name","Android Connect","enabled",true,"protected",true)));
+                } else if(header.startsWith("POST /api/v1/desktop/session "))response=Api.json("ok",true);
+                else if(header.startsWith("POST /api/v1/desktop/release ")){releases++;response=Api.json("released",true);}
+                else if(header.startsWith("POST /api/v1/desktop/input ")) {
+                    latestInput=new JSONObject(new String(body,StandardCharsets.UTF_8));inputHistory.add(latestInput.toString());response=Api.json("ok",true);
+                } else if(header.startsWith("POST /api/v1/desktop ")) {
+                    Bitmap desktop=Bitmap.createBitmap(960,540,Bitmap.Config.ARGB_8888);Canvas drawing=new Canvas(desktop);drawing.drawColor(android.graphics.Color.rgb(32,64,104));android.graphics.Paint paint=new android.graphics.Paint();paint.setColor(android.graphics.Color.WHITE);paint.setTextSize(34);drawing.drawText("Windows desktop - test fixture",60,130,paint);paint.setTextSize(22);drawing.drawText("Landscape / keyboard / mouse / gamepad",60,200,paint);
+                    ByteArrayOutputStream imageBytes=new ByteArrayOutputStream();desktop.compress(Bitmap.CompressFormat.JPEG,65,imageBytes);desktop.recycle();response=Api.json("image",android.util.Base64.encodeToString(imageBytes.toByteArray(),android.util.Base64.NO_WRAP),"width",1920,"height",1080);
+                }
                 else if(header.startsWith("POST /api/v1/jobs/")&&header.contains("/cancel ")) {
                     JSONObject cancelled=new JSONObject(jobs.getJSONObject(0).toString()).put("state","cancelled");
                     jobs=new JSONArray().put(cancelled).put(jobs.getJSONObject(1));response=cancelled;cancellations++;

@@ -92,7 +92,8 @@ class AgentBackend:
         def check():
             if not bridge.is_control_enabled():
                 raise PermissionError("电脑控制已经关闭")
-        bridge.store.audit("manual_desktop_" + action)
+        if action != "screenshot":
+            bridge.store.audit("manual_desktop_" + action)
         return await self.desktop.perform(action, arguments, check)
 
     async def __call__(self, job, history, bridge):

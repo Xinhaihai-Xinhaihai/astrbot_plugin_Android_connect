@@ -64,8 +64,13 @@ final class Api {
                     bytes.write(buffer, 0, count);
                 }
             }
+            String response=bytes.toString(StandardCharsets.UTF_8.name());
+            if(code==530)throw new Exception(response.contains("1033")
+                ?"Cloudflare 530 / 1033：电脑隧道未连接。请启动电脑上的 cloudflared，确认电脑未休眠；这不是手机密钥错误。"
+                :"Cloudflare 530：请检查域名 DNS、隧道状态以及 Cloudflare 错误详情。");
+            if(code==502)throw new Exception("Cloudflare / 服务器 502：隧道或上游无法连接。请确认 AstrBot 和插件已启动，隧道服务地址为 http://127.0.0.1:8765。");
             JSONObject result;
-            try { result = new JSONObject(bytes.toString(StandardCharsets.UTF_8.name())); }
+            try { result = new JSONObject(response); }
             catch (Exception e) { throw new Exception("服务器未返回插件数据（HTTP " + code + "），请检查地址或 Tunnel"); }
             if (code < 200 || code >= 300) throw new Exception(result.optString("error", "连接失败 HTTP " + code));
             return result;

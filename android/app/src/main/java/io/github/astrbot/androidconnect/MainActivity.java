@@ -5,8 +5,6 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -15,9 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.provider.Settings;
 import android.text.InputType;
-import android.util.Base64;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
@@ -279,6 +275,8 @@ public class MainActivity extends Activity {
     }
     private void controls() {
         LinearLayout content=scrolling();
+        LinearLayout panel=card(content,"AstrBot 控制面板","查看电脑插件，按分类启用或停用。");
+        panel.addView(button("管理电脑端插件",()->startActivity(new Intent(this,PluginPanelActivity.class))));
         LinearLayout desktop=card(content,"电脑控制",status.optBoolean("desktop_enabled")?"授权至 "+when(status.optDouble("control_until")):"当前关闭 · 开启后可让 Agent 使用键鼠与截图");
         desktop.addView(text(status.optBoolean("desktop_allowed")?"电脑端总开关已允许":"先在 AstrBot 插件配置开启电脑控制总开关",13,MUTED));
         desktop.addView(button("开启限时电脑控制",()->chooseHours("电脑授权时长",hours->call(
@@ -339,29 +337,11 @@ public class MainActivity extends Activity {
         LinearLayout access=card(content,"授权与隐私","电脑、手机与 PowerShell 各有独立总开关，默认关闭。");
         access.addView(button("打开手机无障碍设置",()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
         access.addView(text("密钥使用 Android Keystore 加密保存。聊天和任务记录保存在电脑端。截图与界面文本可能发送给 AstrBot 配置的模型。手机锁屏或系统授权界面不可被 Agent 绕过。",13,MUTED));
-        card(content,"AstrBot Connect 0.2.0","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
+        card(content,"AstrBot Connect 0.3.0","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
     }
     private void remoteDesktop() {
         if(!status.optBoolean("desktop_enabled")){error("请先开启电脑控制");return;}
-        LinearLayout panel=column();panel.setPadding(dp(12),dp(8),dp(12),dp(8));
-        TextView hint=text("刷新截图后，点击画面即可点击电脑对应位置。",13,MUTED);panel.addView(hint);
-        ImageView image=new ImageView(this);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.FIT_CENTER);panel.addView(image,new LinearLayout.LayoutParams(-1,dp(260)));
-        final int[] dims={0,0}; final Bitmap[] picture={null};
-        Runnable capture=()->call(()->api.call("POST","/desktop",Api.json("action","screenshot")),r->{
-            byte[] data=Base64.decode(r.getString("image"),Base64.DEFAULT);picture[0]=BitmapFactory.decodeByteArray(data,0,data.length);image.setImageBitmap(picture[0]);dims[0]=r.getInt("width");dims[1]=r.getInt("height");
-        });
-        image.setOnTouchListener((v,event)->{
-            if(event.getAction()!=MotionEvent.ACTION_UP||picture[0]==null)return true;
-            float scale=Math.min((float)image.getWidth()/picture[0].getWidth(),(float)image.getHeight()/picture[0].getHeight());
-            float left=(image.getWidth()-picture[0].getWidth()*scale)/2,top=(image.getHeight()-picture[0].getHeight()*scale)/2;
-            float nx=(event.getX()-left)/(picture[0].getWidth()*scale),ny=(event.getY()-top)/(picture[0].getHeight()*scale);
-            if(nx>=0&&ny>=0&&nx<1&&ny<1)call(()->api.call("POST","/desktop",Api.json("action","click","arguments",Api.json("x",(int)(nx*dims[0]),"y",(int)(ny*dims[1])))),r->capture.run());return true;
-        });
-        panel.addView(button("刷新电脑画面",capture));
-        EditText input=field(panel,"向电脑输入文字","","支持中文",false);
-        panel.addView(button("输入到电脑",()->call(()->api.call("POST","/desktop",Api.json("action","type_text","arguments",Api.json("text",input.getText().toString()))),r->capture.run())));
-        panel.addView(button("发送 Enter",()->call(()->api.call("POST","/desktop",Api.json("action","hotkey","arguments",Api.json("keys",new JSONArray().put("enter")))),r->capture.run())));
-        ScrollView scroll=new ScrollView(this);scroll.addView(panel);new AlertDialog.Builder(this).setTitle("电脑遥控").setView(scroll).setNegativeButton("关闭",null).show();capture.run();
+        startActivity(new Intent(this,DesktopActivity.class));
     }
     private void refresh(boolean explicit) {
         if(refreshing||prefs.url().isEmpty())return;refreshing=true;

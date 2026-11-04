@@ -33,6 +33,12 @@
     "default": false,
     "hint": "总开关。启用后还需要在 APK 中开启限时授权；插件重启后限时授权自动关闭。"
   },
+  "allow_plugin_management": {
+    "description": "允许手机管理 AstrBot 插件开关",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后已配对手机可查看插件并启用或停用第三方插件。Android Connect 自身及 AstrBot 内置插件需在电脑管理。"
+  },
   "allow_shell": {
     "description": "允许 Agent 执行 PowerShell 命令",
     "type": "bool",

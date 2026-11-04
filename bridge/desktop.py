@@ -9,6 +9,13 @@ import subprocess
 
 
 class Desktop:
+    supported_keys = set("abcdefghijklmnopqrstuvwxyz0123456789") | {
+        "space", "enter", "esc", "tab", "backspace", "delete", "insert", "home", "end",
+        "pageup", "pagedown", "up", "down", "left", "right", "shift", "ctrl", "alt",
+        "shiftleft", "shiftright", "ctrlleft", "ctrlright", "altleft", "altright",
+        "-", "=", "[", "]", ";", "'", ",", ".", "/", "\\", "`",
+    } | {f"f{i}" for i in range(1, 13)}
+
     def __init__(self):
         self.lock = asyncio.Lock()
         self.gui = None
@@ -31,13 +38,20 @@ class Desktop:
             gui = self.load()
             width, height = gui.size()
             if action == "screenshot":
-                picture = gui.screenshot()
-                picture.thumbnail((1600, 1600))
-                stream = io.BytesIO()
-                picture.save(stream, format="JPEG", quality=72)
-                return {"image": base64.b64encode(stream.getvalue()).decode(),
-                        "width": width, "height": height,
-                        "image_width": picture.width, "image_height": picture.height}
+                edge = arguments.get("max_size", 1600)
+                if type(edge) is not int or not 480 <= edge <= 1920:
+                    raise ValueError("画面尺寸必须为 480–1920")
+                def capture():
+                    picture = gui.screenshot()
+                    picture.thumbnail((edge, edge))
+                    stream = io.BytesIO()
+                    picture.save(stream, format="JPEG", quality=65)
+                    return {"image": base64.b64encode(stream.getvalue()).decode(),
+                            "width": width, "height": height,
+                            "image_width": picture.width, "image_height": picture.height}
+                result = await asyncio.to_thread(capture)
+                check()
+                return result
             if action == "click":
                 x, y = int(arguments["x"]), int(arguments["y"])
                 if not (0 <= x < width and 0 <= y < height):
@@ -66,6 +80,73 @@ class Desktop:
             else:
                 raise ValueError("未知电脑操作")
             return {"ok": True}
+
+    async def apply_state(self, keys, buttons, movement, previous_keys, previous_buttons):
+        async with self.lock:
+            if not (keys or buttons or previous_keys or previous_buttons or any(movement.values())):
+                return
+            if os.name != "nt":
+                raise RuntimeError("桌面输入仅支持 Windows")
+            self._send_state(keys, buttons, movement, previous_keys, previous_buttons)
+
+    def _send_state(self, keys, buttons, movement, previous_keys, previous_buttons):
+        from ctypes import wintypes
+
+        class Keyboard(ctypes.Structure):
+            _fields_ = [("vk", wintypes.WORD), ("scan", wintypes.WORD),
+                        ("flags", wintypes.DWORD), ("time", wintypes.DWORD), ("extra", ctypes.c_size_t)]
+
+        class Mouse(ctypes.Structure):
+            _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG), ("data", wintypes.DWORD),
+                        ("flags", wintypes.DWORD), ("time", wintypes.DWORD), ("extra", ctypes.c_size_t)]
+
+        class Union(ctypes.Union):
+            _fields_ = [("keyboard", Keyboard), ("mouse", Mouse)]
+
+        class Input(ctypes.Structure):
+            _fields_ = [("type", wintypes.DWORD), ("data", Union)]
+
+        user32 = ctypes.windll.user32
+        codes = {"space": 32, "enter": 13, "esc": 27, "tab": 9, "backspace": 8,
+                 "delete": 46, "insert": 45, "home": 36, "end": 35, "pageup": 33,
+                 "pagedown": 34, "up": 38, "down": 40, "left": 37, "right": 39,
+                 "shift": 160, "ctrl": 162, "alt": 164, "shiftleft": 160,
+                 "shiftright": 161, "ctrlleft": 162, "ctrlright": 163,
+                 "altleft": 164, "altright": 165}
+        codes.update({f"f{i}": 111 + i for i in range(1, 13)})
+        extended = {33, 34, 35, 36, 37, 38, 39, 40, 45, 46, 163, 165}
+        events = []
+        for group, released in ((previous_keys - keys, True), (keys - previous_keys, False)):
+            for key in sorted(group):
+                vk = codes.get(key)
+                if vk is None:
+                    vk = user32.VkKeyScanW(ord(key)) & 0xff
+                event = Input(type=1)
+                event.data.keyboard = Keyboard(0, user32.MapVirtualKeyW(vk, 0),
+                                               8 | (2 if released else 0) | (1 if vk in extended else 0), 0, 0)
+                events.append(event)
+
+        def mouse(flags, x=0, y=0, data=0):
+            event = Input(type=0)
+            event.data.mouse = Mouse(x, y, data & 0xffffffff, flags, 0, 0)
+            events.append(event)
+
+        if "x" in movement:
+            width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+            user32.SetCursorPos(int(movement["x"] * (width - 1)), int(movement["y"] * (height - 1)))
+        if movement.get("dx") or movement.get("dy"):
+            mouse(1, movement.get("dx", 0), movement.get("dy", 0))
+        flags = {"left": (2, 4), "right": (8, 16), "middle": (32, 64)}
+        for button in previous_buttons - buttons:
+            mouse(flags[button][1])
+        for button in buttons - previous_buttons:
+            mouse(flags[button][0])
+        if movement.get("scroll"):
+            mouse(0x800, data=movement["scroll"] * 120)
+        if events:
+            inputs = (Input * len(events))(*events)
+            if user32.SendInput(len(events), inputs, ctypes.sizeof(Input)) != len(events):
+                raise RuntimeError("Windows 拒绝部分输入；请检查目标应用权限")
 
     async def unicode_input(self, value, check):
         from ctypes import wintypes

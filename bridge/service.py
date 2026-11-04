@@ -22,7 +22,7 @@ ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 class BridgeService:
     """Authenticated owner-only API; jobs survive phone disconnects, never host restarts."""
 
-    def __init__(self, config, data_dir: Path, backend, desktop=None):
+    def __init__(self, config, data_dir: Path, backend, desktop=None, panel=None, remote_input=None):
         self.config = config
         self.token = config["api_token"]
         if not isinstance(self.token, str) or len(self.token) < 32:
@@ -31,6 +31,8 @@ class BridgeService:
         self.store = Store(data_dir / "tasks.sqlite3")
         self.backend = backend
         self.desktop = desktop
+        self.panel = panel
+        self.remote_input = remote_input
         self.phone = PhoneBroker(self)
         self.queue = asyncio.Queue(maxsize=32)
         self.control_until = 0.0
@@ -56,6 +58,11 @@ class BridgeService:
                 web.post("/api/v1/stop", self.stop_all),
                 web.post("/api/v1/pair", self.pair),
                 web.post("/api/v1/desktop", self.desktop_action),
+                web.get("/api/v1/panel/plugins", self.panel_plugins),
+                web.post("/api/v1/panel/plugins", self.panel_change),
+                web.post("/api/v1/desktop/session", self.input_open),
+                web.post("/api/v1/desktop/input", self.input_update),
+                web.post("/api/v1/desktop/release", self.input_release),
                 web.post("/api/v1/devices/{device}/poll", self.phone.poll),
                 web.post("/api/v1/devices/{device}/commands/{command_id}", self.phone.result),
                 web.post("/api/v1/devices/{device}/disable", self.phone.disable),
@@ -91,6 +98,8 @@ class BridgeService:
             response = await handler(request)
         except web.HTTPException as exc:
             response = web.json_response({"error": exc.reason}, status=exc.status)
+        except PermissionError as exc:
+            response = web.json_response({"error": str(exc)[:500]}, status=403)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             response = web.json_response({"error": str(exc)[:500]}, status=400)
         except Exception:
@@ -159,6 +168,43 @@ class BridgeService:
         result = await self.desktop(action, arguments, self)
         return web.json_response(result)
 
+    def check_panel(self):
+        if not self.config.get("allow_plugin_management", False):
+            raise web.HTTPForbidden(reason="请先在电脑端 Android Connect 配置开启手机插件管理")
+        if not self.panel:
+            raise web.HTTPServiceUnavailable(reason="插件管理服务不可用")
+
+    async def panel_plugins(self, request):
+        self.check_panel()
+        return web.json_response(self.panel.listing())
+
+    async def panel_change(self, request):
+        self.check_panel()
+        data = await self.body(request)
+        result = await self.panel.change(data.get("name"), data.get("enabled"))
+        self.store.audit("plugin_state", name=data.get("name"), enabled=data.get("enabled"))
+        return web.json_response(result)
+
+    def check_input(self):
+        if not self.remote_input:
+            raise web.HTTPServiceUnavailable(reason="请将电脑插件升级到 v0.3.0")
+
+    async def input_open(self, request):
+        self.check_input()
+        data = await self.body(request)
+        self.validate_id(data.get("session"))
+        return web.json_response(await self.remote_input.open(data["session"]))
+
+    async def input_update(self, request):
+        self.check_input()
+        return web.json_response(await self.remote_input.update(await self.body(request)))
+
+    async def input_release(self, request):
+        self.check_input()
+        data = await self.body(request)
+        self.validate_id(data.get("session"))
+        return web.json_response(await self.remote_input.release(data["session"]))
+
     def check_control(self, job):
         if not job["control"] or not self.is_control_enabled():
             raise PermissionError("电脑控制未开启、已关闭或授权已过期")
@@ -171,6 +217,8 @@ class BridgeService:
             {
                 "name": "AstrBot Android Connect",
                 "version": VERSION,
+                "plugin_management": bool(self.config.get("allow_plugin_management", False)),
+                "desktop_input": self.remote_input is not None,
                 "desktop_allowed": bool(self.config.get("allow_desktop_control", False)),
                 "desktop_enabled": self.is_control_enabled(),
                 "control_until": self.control_until if self.is_control_enabled() else 0,
@@ -280,6 +328,8 @@ class BridgeService:
 
     async def revoke(self, all_jobs=False):
         self.control_until = 0
+        if self.remote_input:
+            await self.remote_input.release()
         await self.cancel_jobs(
             [item for item in self.store.active() if all_jobs or item["control"]],
             "电脑控制授权已撤销或到期" if not all_jobs else "紧急停止",
@@ -431,6 +481,8 @@ class BridgeService:
             raise
 
     async def close(self):
+        if self.remote_input:
+            await self.remote_input.close()
         if self.expiry_task:
             self.expiry_task.cancel()
         await self.revoke(all_jobs=True)

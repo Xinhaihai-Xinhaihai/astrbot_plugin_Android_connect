@@ -1,7 +1,7 @@
 name: astrbot_plugin_Android_connect
 display_name: Android Connect 手机助手
 desc: Android 远程连接 Windows AstrBot，支持局域网、Cloudflare Tunnel、后台任务与可选的电脑控制。
-version: v0.2.0
+version: v0.3.0
 author: Xinhaihai-Xinhaihai
 repo: https://github.com/Xinhaihai-Xinhaihai/astrbot_plugin_Android_connect
 astrbot_version: '>=4.29.4'
