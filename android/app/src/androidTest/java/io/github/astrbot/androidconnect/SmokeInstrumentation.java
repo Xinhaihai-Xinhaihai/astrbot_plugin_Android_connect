@@ -27,6 +27,10 @@ public class SmokeInstrumentation extends Instrumentation {
     @Override public void onStart() {
         Bundle results=new Bundle();
         try {
+            // A fresh emulator otherwise shows Android's first-use full-screen tutorial,
+            // which owns focus until a person acknowledges it. Keep this out of app code.
+            try(android.os.ParcelFileDescriptor command=getUiAutomation().executeShellCommand("settings put secure immersive_mode_confirmations confirmed");
+                java.io.FileInputStream output=new java.io.FileInputStream(command.getFileDescriptor())){output.readAllBytes();}
             if(!Api.validateUrl("http://192.168.1.10:8765").equals("http://192.168.1.10:8765"))throw new Exception("LAN URL rejected");
             for(String bad:new String[]{"http://example.com","http://192.168.999.1","https://user:pass@example.com","https://example.com/?token=x"}){
                 boolean rejected=false;try{Api.validateUrl(bad);}catch(Exception expected){rejected=true;}if(!rejected)throw new Exception("Unsafe URL accepted");
