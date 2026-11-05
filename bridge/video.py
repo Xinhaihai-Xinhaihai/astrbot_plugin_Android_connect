@@ -33,6 +33,9 @@ class DesktopVideo:
     def __init__(self, remote_input):
         self.input = remote_input
         self.active = None
+        self.active_session = None
+        self.active_task = None
+        self.start_lock = asyncio.Lock()
         self.handlers = set()
 
     @staticmethod
@@ -81,14 +84,23 @@ class DesktopVideo:
         fps, edge = int(request.query.get("fps", "30")), int(request.query.get("size", "1280"))
         if fps not in (30, 60) or edge not in (960, 1280, 1600, 1920):
             raise ValueError("视频档位应为 30/60 FPS，分辨率为 960/1280/1600/1920")
-        if self.active:
-            raise web.HTTPConflict(reason="已有视频流，请关闭旧桌面窗口后重试")
-        executable = self.executable()
-        dimensions = self.dimensions(edge)
         ws = web.WebSocketResponse(heartbeat=10, max_msg_size=1024, compress=False)
-        self.active = ws
+        if not ws.can_prepare(request).ok:
+            raise web.HTTPBadRequest(reason="视频接口需要 WebSocket 连接")
         task = asyncio.current_task()
-        self.handlers.add(task)
+        async with self.start_lock:
+            if self.active:
+                if self.active_session == session:
+                    raise web.HTTPConflict(reason="已有视频流，请关闭旧桌面窗口后重试")
+                old = self.active_task
+                if old:
+                    old.cancel()
+                    await asyncio.gather(old, return_exceptions=True)
+            self.check(session)
+            executable = self.executable()
+            dimensions = self.dimensions(edge)
+            self.active, self.active_session, self.active_task = ws, session, task
+            self.handlers.add(task)
         process = None
         receiver = None
         try:
@@ -134,6 +146,10 @@ class DesktopVideo:
                     await asyncio.wait_for(ws.close(), 2)
             if self.active is ws:
                 self.active = None
+                self.active_session = None
+                self.active_task = None
+            if callable(getattr(self.input, "release", None)):
+                await self.input.release(session)
             self.handlers.discard(task)
         return ws
 

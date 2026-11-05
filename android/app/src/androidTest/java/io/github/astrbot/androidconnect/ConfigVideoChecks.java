@@ -28,7 +28,7 @@ final class ConfigVideoChecks {
             prefs.put("video_mode","jpeg");DesktopActivity desktop=(DesktopActivity)test.startActivitySync(new Intent(test.getTargetContext(),DesktopActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));active=desktop;
             RemoteChecks.await(test,()->server.latestInput!=null,"Desktop not connected");
             test.runOnMainSync(()->{RemoteChecks.find(desktop.getWindow().getDecorView(),"添加按键").performClick();VirtualPad pad=view(desktop.getWindow().getDecorView(),VirtualPad.class);field(pad.editor.getWindow().getDecorView(),"新按键").setText("复制");field(pad.editor.getWindow().getDecorView(),"f").setText("ctrl+c");pad.editor.getButton(AlertDialog.BUTTON_POSITIVE).performClick();RemoteChecks.find(desktop.getWindow().getDecorView(),"完成布局").performClick();});
-            RemoteChecks.await(test,()->RemoteChecks.find(desktop.getWindow().getDecorView(),"复制")!=null,"Custom key not created");Thread.sleep(600);
+            RemoteChecks.await(test,()->RemoteChecks.find(desktop.getWindow().getDecorView(),"复制")!=null,"Custom key not created");RemoteChecks.await(test,desktop::readyForInput,"Custom key editor did not restore input");
             test.runOnMainSync(()->{Button key=RemoteChecks.find(desktop.getWindow().getDecorView(),"复制");long t=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,10,10,0);key.dispatchTouchEvent(down);down.recycle();});
             RemoteChecks.await(test,()->server.inputHistory.stream().anyMatch(s->s.contains("\"ctrl\"")&&s.contains("\"c\"")),"Custom combination missing");
             if(!prefs.get("virtual_keys_v1","").contains("ctrl+c"))throw new Exception("Layout not persisted");
