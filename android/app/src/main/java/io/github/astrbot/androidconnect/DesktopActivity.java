@@ -67,12 +67,13 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
     private void immersive(){
         if(Build.VERSION.SDK_INT>=30){getWindow().setDecorFitsSystemWindows(false);WindowInsetsController c=getWindow().getInsetsController();if(c!=null){c.hide(WindowInsets.Type.systemBars());c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);}}
         else getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-        if(Build.VERSION.SDK_INT>=28){WindowManager.LayoutParams p=getWindow().getAttributes();p.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;getWindow().setAttributes(p);}
+        if(Build.VERSION.SDK_INT>=28){WindowManager.LayoutParams p=getWindow().getAttributes();if(p.layoutInDisplayCutoutMode!=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES){p.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;getWindow().setAttributes(p);}}
     }
     private void transformVideo(){if(videoWidth==0||videoView.getWidth()==0)return;float sx=(float)videoView.getWidth()/videoWidth,sy=(float)videoView.getHeight()/videoHeight,scale=fill?Math.max(sx,sy):Math.min(sx,sy);float w=videoWidth*scale,h=videoHeight*scale;Matrix matrix=new Matrix();matrix.setScale(w/videoView.getWidth(),h/videoView.getHeight());matrix.postTranslate((videoView.getWidth()-w)/2,(videoView.getHeight()-h)/2);videoView.setTransform(matrix);}
     private void startVideo(){
-        if(!inputReady||!resumed||!live||video!=null||videoSurface==null||!videoSupported||videoMode.equals("jpeg"))return;
-        String current=session;screen.setImageDrawable(null);videoView.setVisibility(View.VISIBLE);
+        if(!inputReady||!resumed||!live||video!=null||!videoSupported||videoMode.equals("jpeg"))return;
+        videoView.setVisibility(View.VISIBLE);if(videoSurface==null)return;
+        String current=session;screen.setImageDrawable(null);
         try{video=new DesktopVideo(prefs,videoSurface,current,Integer.parseInt(videoMode),videoSize,new DesktopVideo.Listener(){
             public void status(int width,int height,int fps){runOnUiThread(()->{if(!Objects.equals(current,session))return;videoWidth=width;videoHeight=height;transformVideo();info.setText("H.264 · 目标 "+videoMode+" FPS · 实际解码 "+fps+" FPS · "+width+"×"+height);});}
             public void error(String message){runOnUiThread(()->{if(Objects.equals(current,session))fail(message);});}
@@ -84,7 +85,7 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
     String connectionInfo(){return info.getText().toString()+" [ready="+inputReady+", resumed="+resumed+", live="+live+", session="+(session!=null)+", focus="+hasWindowFocus()+", destroyed="+isDestroyed()+"]";}
     private void connect(){
         if(!resumed||!live||editing||dialogDepth>0||session!=null)return;input.clear();String next=UUID.randomUUID().toString();session=next;inputReady=false;
-        inputWorker.execute(()->{try{JSONObject status=api.call("GET","/status",null);api.call("POST","/desktop/session",Api.json("session",next));if(next.equals(session)){sequence=0;videoSupported=status.optBoolean("desktop_video");inputReady=true;runOnUiThread(()->{if(!next.equals(session))return;info.setText(videoSupported&&!videoMode.equals("jpeg")?"正在连接 H.264 视频…":"截图兼容模式 · 触摸拖动鼠标，轻点单击");startVideo();});}}catch(Exception e){if(next.equals(session))runOnUiThread(()->{if(next.equals(session))fail(e.getMessage());});}});
+        inputWorker.execute(()->{try{JSONObject status=api.call("GET","/status",null);api.call("POST","/desktop/session",Api.json("session",next));runOnUiThread(()->{if(!next.equals(session))return;sequence=0;videoSupported=status.optBoolean("desktop_video");inputReady=true;info.setText(videoSupported&&!videoMode.equals("jpeg")?"正在连接 H.264 视频…":"截图兼容模式 · 触摸拖动鼠标，轻点单击");startVideo();});}catch(Exception e){if(next.equals(session))runOnUiThread(()->{if(next.equals(session))fail(e.getMessage());});}});
     }
     private void disconnect(){String old=session;session=null;inputReady=false;stopVideo();input.clear();stickX=0;stickY=0;if(old!=null)inputWorker.execute(()->{try{api.call("POST","/desktop/release",Api.json("session",old));}catch(Exception ignored){}});}
     private void flush(){String current=session;if(current==null||!inputReady)return;try{api.call("POST","/desktop/input",input.packet(current,++sequence));}catch(Exception e){if(current.equals(session)){inputReady=false;runOnUiThread(()->{if(current.equals(session))fail(e.getMessage());});}}}
@@ -147,8 +148,8 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
     private void quality(){showDialog(new AlertDialog.Builder(this).setTitle("目标帧率 · 实际帧率受电脑与网络影响").setItems(new String[]{"H.264 · 60 FPS · 1280px","H.264 · 60 FPS · 1920px","H.264 · 30 FPS · 1280px","H.264 · 30 FPS · 1920px","截图兼容 · 960px · 最高约 4 FPS","截图兼容 · 1600px · 最高约 2 FPS"},(d,w)->{videoMode=w<2?"60":w<4?"30":"jpeg";videoSize=w%2==0?1280:1920;frameDelay=w==5?500:250;prefs.put("video_mode",videoMode);prefs.put("video_size",Integer.toString(videoSize));prefs.put("frame_delay",Integer.toString(frameDelay));live=true;}).create());}
     private void typeText(){EditText field=new EditText(this);field.setHint("向电脑当前焦点输入中文或文字");showDialog(new AlertDialog.Builder(this).setTitle("输入文字").setView(field).setPositiveButton("发送",(d,w)->{String text=field.getText().toString();frameWorker.execute(()->{try{api.call("POST","/desktop",Api.json("action","type_text","arguments",Api.json("text",text)));}catch(Exception e){runOnUiThread(()->fail(e.getMessage()));}});}).setNegativeButton("取消",null).create());}
     @Override public void onConfigurationChanged(Configuration config){super.onConfigurationChanged(config);disconnect();connect();}
-    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus&&session!=null)disconnect();else if(focus&&resumed&&live){immersive();connect();}}
-    @Override protected void onResume(){super.onResume();resumed=true;connect();handler.post(frames);handler.post(stick);}
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus&&session!=null)disconnect();else if(focus&&resumed&&live)connect();}
+    @Override protected void onResume(){super.onResume();resumed=true;immersive();connect();handler.post(frames);handler.post(stick);}
     @Override protected void onPause(){resumed=false;handler.removeCallbacks(frames);handler.removeCallbacks(stick);disconnect();super.onPause();}
     @Override public void onInputDeviceAdded(int id){}
     @Override public void onInputDeviceChanged(int id){disconnect();if(resumed&&live)connect();}
