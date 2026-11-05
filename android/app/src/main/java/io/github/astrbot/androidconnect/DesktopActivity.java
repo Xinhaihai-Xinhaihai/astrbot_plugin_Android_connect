@@ -84,7 +84,7 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
     boolean readyForInput(){return inputReady&&resumed&&hasWindowFocus();}
     String connectionInfo(){return info.getText().toString()+" [ready="+inputReady+", resumed="+resumed+", live="+live+", session="+(session!=null)+", focus="+hasWindowFocus()+", destroyed="+isDestroyed()+"]";}
     private void connect(){
-        if(!resumed||!live||editing||dialogDepth>0||session!=null)return;input.clear();String next=UUID.randomUUID().toString();session=next;inputReady=false;
+        if(!resumed||!hasWindowFocus()||!live||editing||dialogDepth>0||session!=null)return;input.clear();String next=UUID.randomUUID().toString();session=next;inputReady=false;
         inputWorker.execute(()->{try{JSONObject status=api.call("GET","/status",null);api.call("POST","/desktop/session",Api.json("session",next));runOnUiThread(()->{if(!next.equals(session))return;sequence=0;videoSupported=status.optBoolean("desktop_video");inputReady=true;info.setText(videoSupported&&!videoMode.equals("jpeg")?"正在连接 H.264 视频…":"截图兼容模式 · 触摸拖动鼠标，轻点单击");startVideo();});}catch(Exception e){if(next.equals(session))runOnUiThread(()->{if(next.equals(session))fail(e.getMessage());});}});
     }
     private void disconnect(){String old=session;session=null;inputReady=false;stopVideo();input.clear();stickX=0;stickY=0;if(old!=null)inputWorker.execute(()->{try{api.call("POST","/desktop/release",Api.json("session",old));}catch(Exception ignored){}});}

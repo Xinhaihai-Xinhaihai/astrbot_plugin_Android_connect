@@ -6,6 +6,7 @@ import android.content.res.Configuration;
 import android.graphics.*;
 import android.os.SystemClock;
 import android.view.*;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.*;
 import java.io.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -20,6 +21,27 @@ final class RemoteChecks {
     }
     static void await(Instrumentation test,BooleanSupplier condition,String error) throws Exception {
         long limit=System.nanoTime()+15_000_000_000L;while(System.nanoTime()<limit){AtomicBoolean ready=new AtomicBoolean();test.runOnMainSync(()->ready.set(condition.getAsBoolean()));if(ready.get())return;Thread.sleep(100);}throw new Exception(error);
+    }
+    static void dismissImmersiveTutorial(Instrumentation test){
+        AccessibilityNodeInfo root=test.getUiAutomation().getRootInActiveWindow();if(root==null)return;
+        try{dismissImmersiveNode(root);}finally{root.recycle();}
+    }
+    private static void dismissImmersiveNode(AccessibilityNodeInfo node){
+        String owner=String.valueOf(node.getPackageName()),text=String.valueOf(node.getText());
+        if((owner.equals("android")||owner.equals("com.android.systemui"))&&text.equalsIgnoreCase("Got it")&&node.isClickable()){
+            if(node.performAction(AccessibilityNodeInfo.ACTION_CLICK))System.out.println("Acknowledged Android full-screen tutorial");return;
+        }
+        for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=node.getChild(i);if(child!=null)try{dismissImmersiveNode(child);}finally{child.recycle();}}
+    }
+    static void awaitDesktop(Instrumentation test,DesktopActivity desktop,String error)throws Exception{
+        long limit=System.nanoTime()+15_000_000_000L;
+        while(System.nanoTime()<limit){dismissImmersiveTutorial(test);AtomicBoolean ready=new AtomicBoolean();test.runOnMainSync(()->ready.set(desktop.readyForInput()));if(ready.get())return;Thread.sleep(100);}
+        final String[] state={""};test.runOnMainSync(()->state[0]=desktop.connectionInfo());
+        try(android.os.ParcelFileDescriptor command=test.getUiAutomation().executeShellCommand("dumpsys window windows");FileInputStream output=new FileInputStream(command.getFileDescriptor())){
+            String windows=new String(output.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+            for(String line:windows.split("\\n"))if(line.contains("mCurrentFocus")||line.contains("mFocusedApp")||line.contains("Window #")||line.contains("mHasSurface"))System.out.println(line);
+        }
+        throw new Exception(error+": "+state[0]);
     }
     static void screenshot(Instrumentation test,Activity app,String name){
         test.runOnMainSync(()->{try{View view=app.getWindow().getDecorView();Bitmap bitmap=Bitmap.createBitmap(view.getWidth(),view.getHeight(),Bitmap.Config.ARGB_8888);view.draw(new Canvas(bitmap));File dir=new File(test.getTargetContext().getExternalFilesDir(null),"screenshots");dir.mkdirs();try(FileOutputStream output=new FileOutputStream(new File(dir,name+".png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,output);}bitmap.recycle();}catch(Exception e){throw new RuntimeException(e);}});
@@ -39,11 +61,11 @@ final class RemoteChecks {
             await(test,()->!server.pluginEnabled,"Plugin switch did not reach host");
             test.runOnMainSync(panel::finish);
             DesktopActivity desktop=(DesktopActivity)test.startActivitySync(new Intent(test.getTargetContext(),DesktopActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));activity=desktop;
-            await(test,()->server.latestInput!=null,"Desktop session did not start");
+            awaitDesktop(test,desktop,"Desktop session did not start");
             test.runOnMainSync(()->find(desktop.getWindow().getDecorView(),"横屏 / 竖屏").performClick());
             await(test,()->desktop.getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE,"Landscape did not open");
-            try{await(test,desktop::readyForInput,"Landscape input session did not reconnect");}catch(Exception e){final String[] state={""};test.runOnMainSync(()->state[0]=desktop.connectionInfo());throw new Exception("Landscape reconnect: "+state[0],e);}
-            Thread.sleep(500);try{await(test,desktop::readyForInput,"Landscape input focus did not settle");}catch(Exception e){final String[] state={""};test.runOnMainSync(()->state[0]=desktop.connectionInfo());throw new Exception("Landscape focus: "+state[0],e);}
+            awaitDesktop(test,desktop,"Landscape input session did not reconnect");
+            Thread.sleep(500);awaitDesktop(test,desktop,"Landscape input focus did not settle");
             test.runOnMainSync(()->{Button w=find(desktop.getWindow().getDecorView(),"W");long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,10,10,0);w.dispatchTouchEvent(down);down.recycle();});
             try{await(test,()->server.inputHistory.stream().anyMatch(s->s.contains("\"w\"")),"Virtual key press missing");}catch(Exception e){final String[] state={""};test.runOnMainSync(()->state[0]=desktop.connectionInfo());throw new Exception("Virtual key press missing: "+state[0]+"; input="+server.latestInput,e);}
             test.runOnMainSync(()->{Button w=find(desktop.getWindow().getDecorView(),"W");long now=SystemClock.uptimeMillis();MotionEvent up=MotionEvent.obtain(now,now,MotionEvent.ACTION_UP,10,10,0);w.dispatchTouchEvent(up);up.recycle();});
