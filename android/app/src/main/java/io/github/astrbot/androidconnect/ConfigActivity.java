@@ -21,7 +21,7 @@ public class ConfigActivity extends Activity {
     private LinearLayout fields;private TextView notice;private Button save,mode,reload;private EditText json;
     AlertDialog confirmation;
     private int dp(int n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
-    private Button button(String text,Runnable action){Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setOnClickListener(v->action.run());return b;}
+    private Button button(String text,Runnable action){Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextColor(0xff5267e8);android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(0xffe9edff);bg.setCornerRadius(dp(10));b.setBackground(bg);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,dp(4),0,dp(6));b.setLayoutParams(lp);b.setOnClickListener(v->action.run());return b;}
     private TextView label(String text,int size){TextView v=new TextView(this);v.setText(text);v.setTextSize(size);v.setTextColor(0xff202941);v.setPadding(0,dp(6),0,dp(6));return v;}
     @Override public void onCreate(Bundle saved){super.onCreate(saved);getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);api=new Api(new Prefs(this));kind=getIntent().getStringExtra("kind");id=getIntent().getStringExtra("id");
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(8),dp(16),dp(8));root.setBackgroundColor(0xfff5f6fa);root.setOnApplyWindowInsetsListener((v,i)->{v.setPadding(dp(16)+i.getSystemWindowInsetLeft(),dp(8)+i.getSystemWindowInsetTop(),dp(16)+i.getSystemWindowInsetRight(),dp(8)+i.getSystemWindowInsetBottom());return i;});
