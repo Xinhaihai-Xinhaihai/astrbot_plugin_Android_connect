@@ -126,7 +126,7 @@ provider_id|使用的模型标识
 dual_output|同时发送语音和文字
 use_file_service|通过文件服务发送音频
 trigger_probability|语音回复触发概率
-group_icl_enable|启用群聊上下文学习
+group_icl_enable|向模型提供群聊上下文
 group_message_max_cnt|群聊上下文消息数上限
 image_caption|将图片转为文字描述
 image_caption_provider_id|图片描述使用的模型
@@ -152,6 +152,8 @@ computer_use_local_permissions|本机电脑操作权限
 sandbox|沙箱环境
 dashboard|电脑控制台设置
 description|说明
+provider_sources.provider|服务商类型
+file_extract.provider|文件解析服务
 """.strip().splitlines())
 
 GROUPS = [

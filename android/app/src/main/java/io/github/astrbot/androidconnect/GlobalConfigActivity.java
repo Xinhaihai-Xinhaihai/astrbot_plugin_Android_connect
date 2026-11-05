@@ -15,7 +15,7 @@ public class GlobalConfigActivity extends Activity {
     private LinearLayout list;private Button refresh;private boolean busy;
     private int dp(int n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
     private TextView label(String text,int size){TextView v=new TextView(this);v.setText(text);v.setTextSize(size);v.setTextColor(0xff202941);v.setPadding(0,dp(10),0,dp(10));return v;}
-    private Button button(String text,Runnable action){Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextColor(0xff5267e8);b.setOnClickListener(v->action.run());return b;}
+    private Button button(String text,Runnable action){Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextColor(0xff5267e8);android.graphics.drawable.GradientDrawable background=new android.graphics.drawable.GradientDrawable();background.setColor(0xffe9edff);background.setCornerRadius(dp(12));b.setBackground(background);LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(-1,dp(52));layout.setMargins(0,dp(6),0,dp(10));b.setLayoutParams(layout);b.setOnClickListener(v->action.run());return b;}
     @Override public void onCreate(Bundle state){
         super.onCreate(state);getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(0xfff5f6fa);
