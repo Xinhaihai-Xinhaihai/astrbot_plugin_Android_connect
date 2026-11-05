@@ -48,7 +48,7 @@ async def test_plugin_state_idempotent_and_self_protected(panel):
 @pytest.fixture
 async def remote():
     desktop = SimpleNamespace(supported_keys=Desktop.supported_keys, apply_state=AsyncMock())
-    lease = RemoteInput(desktop, lambda: True, timeout=.1)
+    lease = RemoteInput(desktop, lambda: True, timeout=3)
     await lease.open("session-one")
     yield lease
     await lease.close()
@@ -72,6 +72,7 @@ async def test_input_exact_order_and_disconnect_release(remote):
 
 
 async def test_watchdog_and_revocation(remote):
+    remote.timeout = .1
     await remote.update(dict(session="session-one", sequence=1, keys=["w"]))
     await asyncio.sleep(.3)
     assert remote.session is None and remote.keys == set()

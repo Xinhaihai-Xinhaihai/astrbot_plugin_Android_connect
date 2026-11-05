@@ -16,8 +16,8 @@ final class DesktopTouch {
     private long started;
     private boolean moved,two,dragging,active,valid=true,direct;
     private float sensitivity=1;
-    private final Runnable longPress=()->{if(active&&!moved&&!two&&valid){dragging=true;sink.hold(true);}};
-    DesktopTouch(Context context,Sink sink){this.sink=sink;slop=ViewConfiguration.get(context).getScaledTouchSlop();scrollStep=36*context.getResources().getDisplayMetrics().density;}
+    private final Runnable longPress;
+    DesktopTouch(Context context,Sink sink){this.sink=sink;slop=ViewConfiguration.get(context).getScaledTouchSlop();scrollStep=36*context.getResources().getDisplayMetrics().density;longPress=()->{if(active&&!moved&&!two&&valid){dragging=true;this.sink.hold(true);}};}
     void configure(boolean direct,float sensitivity){cancel();this.direct=direct;this.sensitivity=sensitivity;}
     void cancel(){timer.removeCallbacks(longPress);if(dragging)sink.hold(false);active=false;dragging=false;pointer=-1;scroll=0;}
     boolean handle(MotionEvent e){
