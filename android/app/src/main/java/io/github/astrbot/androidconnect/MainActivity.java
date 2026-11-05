@@ -275,8 +275,8 @@ public class MainActivity extends Activity {
     }
     private void controls() {
         LinearLayout content=scrolling();
-        LinearLayout panel=card(content,"AstrBot 控制面板","查看电脑插件，按分类启用或停用。");
-        panel.addView(button("管理电脑端插件",()->startActivity(new Intent(this,PluginPanelActivity.class))));
+        LinearLayout panel=card(content,"AstrBot 控制面板","插件开关与配置、全局配置方案、模型平台设置和人格。");
+        panel.addView(button("插件与 AstrBot 配置",()->startActivity(new Intent(this,PluginPanelActivity.class))));
         LinearLayout desktop=card(content,"电脑控制",status.optBoolean("desktop_enabled")?"授权至 "+when(status.optDouble("control_until")):"当前关闭 · 开启后可让 Agent 使用键鼠与截图");
         desktop.addView(text(status.optBoolean("desktop_allowed")?"电脑端总开关已允许":"先在 AstrBot 插件配置开启电脑控制总开关",13,MUTED));
         desktop.addView(button("开启限时电脑控制",()->chooseHours("电脑授权时长",hours->call(
@@ -337,7 +337,7 @@ public class MainActivity extends Activity {
         LinearLayout access=card(content,"授权与隐私","电脑、手机与 PowerShell 各有独立总开关，默认关闭。");
         access.addView(button("打开手机无障碍设置",()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
         access.addView(text("密钥使用 Android Keystore 加密保存。聊天和任务记录保存在电脑端。截图与界面文本可能发送给 AstrBot 配置的模型。手机锁屏或系统授权界面不可被 Agent 绕过。",13,MUTED));
-        card(content,"AstrBot Connect 0.3.0","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
+        card(content,"AstrBot Connect 0.4.0","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
     }
     private void remoteDesktop() {
         if(!status.optBoolean("desktop_enabled")){error("请先开启电脑控制");return;}

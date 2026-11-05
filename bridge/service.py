@@ -32,6 +32,8 @@ class BridgeService:
         self.backend = backend
         self.desktop = desktop
         self.panel = panel
+        self.config_panel = None
+        self.video = None
         self.remote_input = remote_input
         self.phone = PhoneBroker(self)
         self.queue = asyncio.Queue(maxsize=32)
@@ -60,6 +62,11 @@ class BridgeService:
                 web.post("/api/v1/desktop", self.desktop_action),
                 web.get("/api/v1/panel/plugins", self.panel_plugins),
                 web.post("/api/v1/panel/plugins", self.panel_change),
+                web.get("/api/v1/panel/configs", self.config_list),
+                web.get("/api/v1/panel/config", self.config_read),
+                web.post("/api/v1/panel/config", self.config_save),
+                web.post("/api/v1/panel/reload", self.config_reload),
+                web.get("/api/v1/desktop/video", self.video_stream),
                 web.post("/api/v1/desktop/session", self.input_open),
                 web.post("/api/v1/desktop/input", self.input_update),
                 web.post("/api/v1/desktop/release", self.input_release),
@@ -189,6 +196,41 @@ class BridgeService:
         if not self.remote_input:
             raise web.HTTPServiceUnavailable(reason="请将电脑插件升级到 v0.3.0")
 
+    def check_config_panel(self):
+        if not self.config.get("allow_config_management", False):
+            raise web.HTTPForbidden(reason="请先在电脑 Android Connect 配置开启手机配置管理")
+        if not self.config_panel:
+            raise web.HTTPServiceUnavailable(reason="请升级电脑插件以支持配置编辑")
+
+    async def config_list(self, request):
+        self.check_config_panel()
+        return web.json_response(await self.config_panel.listing())
+
+    async def config_read(self, request):
+        self.check_config_panel()
+        return web.json_response(await self.config_panel.read(request.query.get("kind"), request.query.get("id")))
+
+    async def config_save(self, request):
+        self.check_config_panel()
+        request = request.clone(client_max_size=600 * 1024)
+        data = await self.body(request)
+        result = await self.config_panel.save(data.get("kind"), data.get("id"), data.get("values"), data.get("revision"))
+        self.store.audit("config_saved", kind=data.get("kind"), name=data.get("id"))
+        return web.json_response(result)
+
+    async def config_reload(self, request):
+        self.check_config_panel()
+        self.check_panel()
+        data = await self.body(request)
+        result = await self.config_panel.reload(data.get("name"))
+        self.store.audit("plugin_reload", name=data.get("name"))
+        return web.json_response(result)
+
+    async def video_stream(self, request):
+        if not self.video:
+            raise web.HTTPServiceUnavailable(reason="请升级电脑插件以支持视频传输")
+        return await self.video.stream(request)
+
     async def input_open(self, request):
         self.check_input()
         data = await self.body(request)
@@ -218,6 +260,8 @@ class BridgeService:
                 "name": "AstrBot Android Connect",
                 "version": VERSION,
                 "plugin_management": bool(self.config.get("allow_plugin_management", False)),
+                "config_management": bool(self.config.get("allow_config_management", False)),
+                "desktop_video": self.video is not None,
                 "desktop_input": self.remote_input is not None,
                 "desktop_allowed": bool(self.config.get("allow_desktop_control", False)),
                 "desktop_enabled": self.is_control_enabled(),
@@ -481,6 +525,8 @@ class BridgeService:
             raise
 
     async def close(self):
+        if self.video:
+            await self.video.close()
         if self.remote_input:
             await self.remote_input.close()
         if self.expiry_task:

@@ -166,6 +166,9 @@ final class ConversationChecks {
         volatile int releases;
         volatile boolean pluginEnabled=true;
         volatile JSONObject latestInput;
+        volatile JSONObject configValues=Api.json("count",3,"enabled",true,"message","测试配置");
+        volatile int configSaves;
+        volatile byte[][] videoFrames;
         final java.util.List<String> inputHistory=new java.util.concurrent.CopyOnWriteArrayList<>();
         private volatile JSONArray jobs;
         MockBridge(String session) throws Exception {
@@ -189,6 +192,13 @@ final class ConversationChecks {
                     if(headerBytes.size()>32768)throw new IllegalStateException("Header too long");
                 }
                 String header=headerBytes.toString(StandardCharsets.US_ASCII.name());
+                if(header.startsWith("GET /api/v1/desktop/video")&&videoFrames!=null){
+                    Matcher key=Pattern.compile("(?im)^Sec-WebSocket-Key: *([^\\r\\n]+)").matcher(header);if(!key.find())throw new Exception("Missing websocket key");
+                    String accept=android.util.Base64.encodeToString(java.security.MessageDigest.getInstance("SHA-1").digest((key.group(1).trim()+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").getBytes(StandardCharsets.US_ASCII)),android.util.Base64.NO_WRAP);
+                    java.io.OutputStream output=socket.getOutputStream();output.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "+accept+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                    frame(output,1,Api.json("codec","h264","width",320,"height",180,"fps",60).toString().getBytes(StandardCharsets.UTF_8));
+                    try{for(int repeat=0;repeat<12;repeat++)for(byte[] part:videoFrames){frame(output,2,part);Thread.sleep(17);}}catch(java.io.IOException ignored){}return;
+                }
                 Matcher length=Pattern.compile("(?im)^Content-Length: *([0-9]+)").matcher(header);
                 byte[] body=new byte[length.find()?Integer.parseInt(length.group(1)):0];
                 for(int offset=0;offset<body.length;){int read=stream.read(body,offset,body.length-offset);if(read<0)throw new IllegalStateException("Truncated body");offset+=read;}
@@ -202,7 +212,12 @@ final class ConversationChecks {
                         .put("runs_completed",count==0?2:count).put("runs_started",count==0?2:count);
                     jobs=new JSONArray().put(job).put(jobs.getJSONObject(0));response=job;
                 } else if(header.startsWith("GET /api/v1/jobs "))response=Api.json("jobs",jobs);
-                else if(header.startsWith("GET /api/v1/status "))response=Api.json("repeat_modes",new JSONArray().put(1).put(5).put(10).put(0),"desktop_enabled",true,"desktop_input",true);
+                else if(header.startsWith("GET /api/v1/status "))response=Api.json("repeat_modes",new JSONArray().put(1).put(5).put(10).put(0),"desktop_enabled",true,"desktop_input",true,"desktop_video",videoFrames!=null);
+                else if(header.startsWith("GET /api/v1/panel/configs "))response=Api.json("configs",new JSONArray().put(Api.json("kind","global","id","default","name","默认全局配置")).put(Api.json("kind","persona","id","default","name","default")));
+                else if(header.startsWith("GET /api/v1/panel/config?")||header.startsWith("POST /api/v1/panel/config ")){
+                    if(header.startsWith("POST")){configValues=new JSONObject(new String(body,StandardCharsets.UTF_8)).getJSONObject("values");configSaves++;}
+                    response=Api.json("values",configValues,"schema",Api.json("count",Api.json("type","int","description","次数")),"revision","test-revision","locked",new JSONArray(),"notice","保存后在电脑生效。");
+                }
                 else if(header.startsWith("GET /api/v1/panel/plugins ")||header.startsWith("POST /api/v1/panel/plugins ")) {
                     if(header.startsWith("POST"))pluginEnabled=new JSONObject(new String(body,StandardCharsets.UTF_8)).getBoolean("enabled");
                     response=Api.json("plugins",new JSONArray().put(Api.json("name","example","display_name","示例插件","description","用于验证远程插件开关","version","1.0","enabled",pluginEnabled,"protected",false)).put(Api.json("name","astrbot_plugin_Android_connect","display_name","Android Connect","enabled",true,"protected",true)));
@@ -223,6 +238,7 @@ final class ConversationChecks {
                 socket.getOutputStream().write(headers.getBytes(StandardCharsets.US_ASCII));socket.getOutputStream().write(json);socket.getOutputStream().flush();
             } catch(Exception e){if(!listener.isClosed())throw new RuntimeException(e);}
         }
+        private static void frame(java.io.OutputStream output,int opcode,byte[] data)throws Exception{output.write(0x80|opcode);if(data.length<126)output.write(data.length);else if(data.length<=65535){output.write(126);output.write((data.length>>>8)&255);output.write(data.length&255);}else{output.write(127);for(int i=7;i>=0;i--)output.write((int)(((long)data.length>>>(8*i))&255));}output.write(data);output.flush();}
         @Override public void close() throws Exception {release.countDown();listener.close();workers.shutdownNow();}
     }
 }

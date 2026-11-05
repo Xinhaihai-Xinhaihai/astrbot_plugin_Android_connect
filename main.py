@@ -5,11 +5,13 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
 
 from .bridge.agent import AgentBackend
+from .bridge.config_panel import ConfigPanel
 from .bridge.desktop import Desktop
 from .bridge.discovery import Discovery
 from .bridge.panel import PluginPanel
 from .bridge.remote_input import RemoteInput
 from .bridge.service import BridgeService
+from .bridge.video import DesktopVideo
 
 
 class AndroidConnectPlugin(Star):
@@ -30,7 +32,9 @@ class AndroidConnectPlugin(Star):
         backend = AgentBackend(self.context, self.config, Desktop())
         service = BridgeService(self.config, directory, backend, backend.manual_desktop)
         service.panel = PluginPanel(self.context)
+        service.config_panel = ConfigPanel(self.context, directory, service.panel.lock)
         service.remote_input = RemoteInput(backend.desktop, service.is_control_enabled)
+        service.video = DesktopVideo(service.remote_input)
         await service.start()
         self.bridge = service
         if self.config.get("enable_pairing", False):

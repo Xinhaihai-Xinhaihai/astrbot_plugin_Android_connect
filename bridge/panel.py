@@ -32,6 +32,7 @@ class PluginPanel:
             "description": str(getattr(star, "desc", "") or "")[:2000],
             "version": str(getattr(star, "version", "") or ""),
             "author": str(getattr(star, "author", "") or ""),
+            "config_available": getattr(star, "config", None) is not None,
             "enabled": bool(star.activated), "protected": self.protected(star),
         } for star in self.context.get_all_stars() if star.name]}
 

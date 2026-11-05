@@ -20,7 +20,7 @@ final class DesktopInput {
     }
     private JSONObject state() {
         Set<String> keys=new TreeSet<>(),buttons=new TreeSet<>();
-        for(String action:sources.values())if(action.startsWith("mouse:"))buttons.add(action.substring(6));else keys.add(action);
+        for(String held:sources.values())for(String action:held.split("\\+"))if(action.startsWith("mouse:"))buttons.add(action.substring(6));else keys.add(action);
         return Api.json("keys",new JSONArray(keys),"buttons",new JSONArray(buttons));
     }
     synchronized void move(double horizontal,double vertical) {dx=Math.max(-2000,Math.min(2000,dx+horizontal));dy=Math.max(-2000,Math.min(2000,dy+vertical));}

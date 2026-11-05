@@ -45,6 +45,12 @@
     "default": false,
     "hint": "仅在电脑控制同时开启时生效；命令使用当前 Windows 用户权限。关闭此项不限制已授权的键鼠能操作哪些应用。"
   },
+  "allow_config_management": {
+    "description": "允许手机编辑插件和 AstrBot 全局配置",
+    "type": "bool",
+    "default": false,
+    "hint": "已配对手机可读取并修改插件、全局配置方案和人格。保存前自动备份；控制台登录安全设置和连接权限仍在电脑管理。全局设置保存后需重启 AstrBot。"
+  },
   "max_control_hours": {
     "description": "电脑控制最长授权小时数",
     "type": "int",
