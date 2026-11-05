@@ -53,6 +53,7 @@ public class SmokeInstrumentation extends Instrumentation {
             runOnMainSync(activity::finish);
             stage("conversation and repeat modes");ConversationChecks.run(this);
             stage("plugin panel and desktop inputs");RemoteChecks.run(this);
+            stage("trackpad, direct touch, drag cancellation and two-finger gestures");PointerChecks.run(this);
             stage("configuration editor, custom keys and H.264 video");ConfigVideoChecks.run(this);
             results.putString("stream","PASS: four navigation pages, endpoint validation, new conversation lifecycle, four repeat modes, plugin switch, landscape, virtual keys, external keyboard, gamepad and exit release\n");finish(0,results);
         }catch(Exception e){results.putString("stream","FAIL: "+e+"\n");finish(1,results);}

@@ -7,8 +7,11 @@ import io
 import os
 import subprocess
 
+from .display import cursor_position, physical_pixels
+
 
 class Desktop:
+    cursor = staticmethod(cursor_position)
     supported_keys = set("abcdefghijklmnopqrstuvwxyz0123456789") | {
         "space", "enter", "esc", "tab", "backspace", "delete", "insert", "home", "end",
         "pageup", "pagedown", "up", "down", "left", "right", "shift", "ctrl", "alt",
@@ -83,11 +86,12 @@ class Desktop:
 
     async def apply_state(self, keys, buttons, movement, previous_keys, previous_buttons):
         async with self.lock:
-            if not (keys or buttons or previous_keys or previous_buttons or any(movement.values())):
+            if not (keys or buttons or previous_keys or previous_buttons or "x" in movement or any(movement.values())):
                 return
             if os.name != "nt":
                 raise RuntimeError("桌面输入仅支持 Windows")
-            self._send_state(keys, buttons, movement, previous_keys, previous_buttons)
+            with physical_pixels():
+                self._send_state(keys, buttons, movement, previous_keys, previous_buttons)
 
     def _send_state(self, keys, buttons, movement, previous_keys, previous_buttons):
         from ctypes import wintypes
@@ -117,7 +121,8 @@ class Desktop:
         extended = {33, 34, 35, 36, 37, 38, 39, 40, 45, 46, 163, 165}
         events = []
         for group, released in ((previous_keys - keys, True), (keys - previous_keys, False)):
-            for key in sorted(group):
+            modifiers = {"shiftleft", "shiftright", "ctrlleft", "ctrlright", "altleft", "altright"}
+            for key in sorted(group, key=lambda key: ((key in modifiers) if released else (key not in modifiers), key)):
                 vk = codes.get(key)
                 if vk is None:
                     vk = user32.VkKeyScanW(ord(key)) & 0xff

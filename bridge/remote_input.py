@@ -1,11 +1,13 @@
 """Exclusive input lease: full key states, ordered packets and disconnect release."""
 
 import asyncio
+import contextlib
+import json
 import logging
 import math
 import time
 
-from aiohttp import web
+from aiohttp import WSMsgType, web
 
 
 class RemoteInput:
@@ -17,6 +19,7 @@ class RemoteInput:
         self.deadline = 0
         self.keys, self.buttons = set(), set()
         self.watchdog = None
+        self.streams = {}
 
     async def open(self, session):
         async with self.lock:
@@ -30,7 +33,11 @@ class RemoteInput:
             self.deadline = time.monotonic() + self.timeout
             if not self.watchdog:
                 self.watchdog = asyncio.create_task(self.watch())
-            return {"session": session, "lease_seconds": self.timeout}
+            return {"session": session, "lease_seconds": self.timeout, "cursor": self.cursor()}
+
+    def cursor(self):
+        method = getattr(self.desktop, "cursor", None)
+        return method() if callable(method) else None
 
     async def _release(self):
         # Invalidate first: late packets must not revive a closed session.
@@ -92,7 +99,64 @@ class RemoteInput:
             self.keys, self.buttons = keys, buttons
             self.sequence = sequence
             self.deadline = time.monotonic() + self.timeout
-            return {"ok": True, "sequence": sequence}
+            return {"ok": True, "sequence": sequence, "cursor": self.cursor()}
+
+    async def stream(self, request):
+        session = request.query.get("session")
+        if not session or session != self.session or not self.allowed() or time.monotonic() >= self.deadline:
+            raise web.HTTPForbidden(reason="桌面控制未开启或会话已结束")
+        if session in self.streams:
+            raise web.HTTPConflict(reason="此桌面会话已有输入连接")
+        ws = web.WebSocketResponse(heartbeat=10, max_msg_size=8192, compress=False)
+        if not ws.can_prepare(request).ok:
+            raise web.HTTPBadRequest(reason="实时输入接口需要 WebSocket 连接")
+        self.streams[session] = ws
+        try:
+            await ws.prepare(request)
+            await ws.send_json({"ready": True, "cursor": self.cursor()})
+            started, count = time.monotonic(), 0
+            while not ws.closed:
+                if session != self.session or not self.allowed() or time.monotonic() >= self.deadline:
+                    break
+                try:
+                    message = await asyncio.wait_for(ws.receive(), .5)
+                except TimeoutError:
+                    continue
+                if message.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.ERROR):
+                    break
+                if message.type != WSMsgType.TEXT:
+                    raise ValueError("输入消息必须为 JSON 文本")
+                now = time.monotonic()
+                if now - started >= 1:
+                    started, count = now, 0
+                count += 1
+                if count > 180:
+                    raise ValueError("输入发送过快，请重新连接")
+                data = json.loads(message.data)
+                if not isinstance(data, dict) or data.get("session") != session:
+                    raise ValueError("输入会话不匹配")
+                result = await self.update(data)
+                await asyncio.wait_for(ws.send_json(result), 1)
+        except (ConnectionError, asyncio.CancelledError):
+            pass
+        except Exception as exc:
+            if ws.prepared and not ws.closed:
+                with contextlib.suppress(Exception):
+                    reason = exc.reason if isinstance(exc, web.HTTPException) else str(exc)
+                    await asyncio.wait_for(ws.send_json({"error": reason[:200]}), 1)
+            elif not ws.prepared:
+                raise
+        finally:
+            self.streams.pop(session, None)
+            closing = asyncio.create_task(self.release(session))
+            try:
+                await asyncio.shield(closing)
+            except asyncio.CancelledError:
+                await closing
+            if ws.prepared:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(ws.close(), 1)
+        return ws
 
     async def watch(self):
         while True:
@@ -105,6 +169,8 @@ class RemoteInput:
                         logging.getLogger(__name__).exception("Remote input release failed; retrying")
 
     async def close(self):
+        for ws in list(self.streams.values()):
+            await ws.close()
         if self.watchdog:
             self.watchdog.cancel()
             await asyncio.gather(self.watchdog, return_exceptions=True)

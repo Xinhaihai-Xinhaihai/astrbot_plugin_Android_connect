@@ -10,6 +10,7 @@ from pathlib import Path
 
 from aiohttp import web
 
+from .config_labels import describe, groups
 from .panel import PluginPanel
 
 
@@ -47,7 +48,9 @@ def validate(value, old, schema=None, path="配置", depth=0):
     elif isinstance(value, list):
         for index, item in enumerate(value):
             items = schema.get("items")
-            item_schema = {"type": items} if isinstance(items, str) else {"type": "object", "items": items} if isinstance(items, dict) else {}
+            item_schema = {"type": items} if isinstance(items, str) else (
+                items if isinstance(items.get("type"), str) else {"type": "object", "items": items}
+            ) if isinstance(items, dict) else {}
             if kind == "template_list":
                 if not isinstance(item, dict):
                     raise ValueError(f"{path}[{index}] 必须为模板对象")
@@ -151,7 +154,23 @@ class ConfigPanel:
         values = self.snapshot(config)
         # Desktop dashboard credentials / 2FA and bridge access controls stay on the PC.
         visible = {key: value for key, value in values.items() if key not in locked}
+        if kind != "plugin":
+            schema = describe(visible, schema)
+        if kind == "global" and "provider_sources" in visible:
+            model_schema = schema.get("provider", {})
+            templates = model_schema.pop("config_template", {})
+            for value in templates.values():
+                if isinstance(value, dict):
+                    value["enable"] = False
+            schema["provider_sources"]["config_template"] = templates
+            source_items = {**model_schema.get("items", {}), **schema["provider_sources"].get("items", {})}
+            schema["provider_sources"]["items"] = source_items
+            model_schema["config_template"] = {"聊天模型": {
+                "id": "new_model", "provider_source_id": "", "model": "", "enable": False,
+                "max_context_tokens": 32768, "modalities": ["text"], "custom_extra_body": {}}
+            }
         return {"kind": kind, "id": identifier, "values": visible, "schema": schema,
+                "groups": groups(visible) if kind == "global" else [],
                 "revision": revision(values), "locked": locked, "readonly": readonly,
                 "notice": "保存全局配置后请重启 AstrBot，使模型和平台等设置完整生效。" if kind == "global"
                 else "保存人格后立即更新。" if kind == "persona"

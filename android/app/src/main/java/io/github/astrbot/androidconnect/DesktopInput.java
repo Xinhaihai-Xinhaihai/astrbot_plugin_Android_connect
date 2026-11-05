@@ -26,11 +26,12 @@ final class DesktopInput {
     synchronized void move(double horizontal,double vertical) {dx=Math.max(-2000,Math.min(2000,dx+horizontal));dy=Math.max(-2000,Math.min(2000,dy+vertical));}
     synchronized void point(double horizontal,double vertical){x=horizontal;y=vertical;}
     synchronized void scroll(int amount){wheel=Math.max(-20,Math.min(20,wheel+amount));}
+    synchronized boolean pending(){return !transitions.isEmpty()||Math.abs(dx)>=1||Math.abs(dy)>=1||wheel!=0||x!=null;}
     synchronized JSONObject packet(String session,long sequence) throws Exception {
         JSONObject result=transitions.isEmpty()?state():transitions.removeFirst();
         result.put("session",session).put("sequence",sequence).put("dx",(int)dx).put("dy",(int)dy).put("scroll",wheel);
         if(x!=null){result.put("x",x).put("y",y);x=null;y=null;}
-        dx=0;dy=0;wheel=0;return result;
+        dx-=(int)dx;dy-=(int)dy;wheel=0;return result;
     }
     synchronized void clear(){sources.clear();transitions.clear();dx=0;dy=0;wheel=0;x=null;y=null;}
 }

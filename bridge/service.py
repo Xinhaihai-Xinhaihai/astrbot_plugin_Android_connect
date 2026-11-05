@@ -69,6 +69,7 @@ class BridgeService:
                 web.get("/api/v1/desktop/video", self.video_stream),
                 web.post("/api/v1/desktop/session", self.input_open),
                 web.post("/api/v1/desktop/input", self.input_update),
+                web.get("/api/v1/desktop/input", self.input_stream),
                 web.post("/api/v1/desktop/release", self.input_release),
                 web.post("/api/v1/devices/{device}/poll", self.phone.poll),
                 web.post("/api/v1/devices/{device}/commands/{command_id}", self.phone.result),
@@ -241,6 +242,10 @@ class BridgeService:
         self.check_input()
         return web.json_response(await self.remote_input.update(await self.body(request)))
 
+    async def input_stream(self, request):
+        self.check_input()
+        return await self.remote_input.stream(request)
+
     async def input_release(self, request):
         self.check_input()
         data = await self.body(request)
@@ -263,6 +268,7 @@ class BridgeService:
                 "config_management": bool(self.config.get("allow_config_management", False)),
                 "desktop_video": self.video is not None,
                 "desktop_input": self.remote_input is not None,
+                "desktop_input_stream": self.remote_input is not None,
                 "desktop_allowed": bool(self.config.get("allow_desktop_control", False)),
                 "desktop_enabled": self.is_control_enabled(),
                 "control_until": self.control_until if self.is_control_enabled() else 0,

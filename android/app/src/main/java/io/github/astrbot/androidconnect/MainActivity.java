@@ -275,8 +275,10 @@ public class MainActivity extends Activity {
     }
     private void controls() {
         LinearLayout content=scrolling();
-        LinearLayout panel=card(content,"AstrBot 控制面板","插件开关与配置、全局配置方案、模型平台设置和人格。");
-        panel.addView(button("插件与 AstrBot 配置",()->startActivity(new Intent(this,PluginPanelActivity.class))));
+        LinearLayout panel=card(content,"AstrBot 配置","模型服务、消息平台、对话、语音、知识库和人格，按类别编辑。");
+        panel.addView(button("打开 AstrBot 配置",()->startActivity(new Intent(this,GlobalConfigActivity.class))));
+        LinearLayout plugins=card(content,"插件管理","管理已安装插件的开关，并单独编辑每个插件的配置。");
+        plugins.addView(button("打开插件管理",()->startActivity(new Intent(this,PluginPanelActivity.class))));
         LinearLayout desktop=card(content,"电脑控制",status.optBoolean("desktop_enabled")?"授权至 "+when(status.optDouble("control_until")):"当前关闭 · 开启后可让 Agent 使用键鼠与截图");
         desktop.addView(text(status.optBoolean("desktop_allowed")?"电脑端总开关已允许":"先在 AstrBot 插件配置开启电脑控制总开关",13,MUTED));
         desktop.addView(button("开启限时电脑控制",()->chooseHours("电脑授权时长",hours->call(
