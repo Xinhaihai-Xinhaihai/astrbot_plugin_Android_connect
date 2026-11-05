@@ -15,9 +15,9 @@
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
         <activity android:name=".PluginPanelActivity" android:exported="false" />
-        <activity android:name=".ConfigActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".ConfigActivity" android:exported="false" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden" />
         <activity android:name=".DesktopActivity" android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation"
             android:screenOrientation="fullSensor" />
         <service android:name=".PhoneAccessibilityService" android:exported="true"
             android:label="AstrBot 手机控制" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">

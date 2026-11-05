@@ -42,7 +42,7 @@ final class RemoteChecks {
             await(test,()->server.latestInput!=null,"Desktop session did not start");
             test.runOnMainSync(()->find(desktop.getWindow().getDecorView(),"横屏 / 竖屏").performClick());
             await(test,()->desktop.getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE,"Landscape did not open");
-            await(test,desktop::readyForInput,"Landscape input session did not reconnect");
+            try{await(test,desktop::readyForInput,"Landscape input session did not reconnect");}catch(Exception e){final String[] state={""};test.runOnMainSync(()->state[0]=desktop.connectionInfo());throw new Exception("Landscape reconnect: "+state[0],e);}
             Thread.sleep(500);await(test,desktop::readyForInput,"Landscape input focus did not settle");
             test.runOnMainSync(()->{Button w=find(desktop.getWindow().getDecorView(),"W");long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,10,10,0);w.dispatchTouchEvent(down);down.recycle();});
             try{await(test,()->server.inputHistory.stream().anyMatch(s->s.contains("\"w\"")),"Virtual key press missing");}catch(Exception e){final String[] state={""};test.runOnMainSync(()->state[0]=desktop.connectionInfo());throw new Exception("Virtual key press missing: "+state[0]+"; input="+server.latestInput,e);}

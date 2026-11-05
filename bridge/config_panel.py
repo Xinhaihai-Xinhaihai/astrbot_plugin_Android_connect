@@ -29,7 +29,7 @@ def validate(value, old, schema=None, path="配置", depth=0):
     expected = {"int": int, "float": (int, float), "bool": bool, "string": str,
                 "text": str, "list": list, "template_list": list, "object": dict,
                 "dict": dict}.get(kind, type(old) if old is not None else None)
-    if value is None and old is None:
+    if value is None and (old is None or schema.get("nullable")):
         return
     if expected and (not isinstance(value, expected) or
                      (isinstance(value, bool) and expected is not bool)):
@@ -46,8 +46,19 @@ def validate(value, old, schema=None, path="配置", depth=0):
             raise ValueError(f"{path} 缺少已有字段，请保留未修改的配置")
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            item_schema = {"type": schema["items"]} if isinstance(schema.get("items"), str) else {}
-            validate(item, None, item_schema, f"{path}[{index}]", depth + 1)
+            items = schema.get("items")
+            item_schema = {"type": items} if isinstance(items, str) else {"type": "object", "items": items} if isinstance(items, dict) else {}
+            if kind == "template_list":
+                if not isinstance(item, dict):
+                    raise ValueError(f"{path}[{index}] 必须为模板对象")
+                template = schema.get("templates", {}).get(item.get("__template_key") or item.get("template"))
+                if not isinstance(template, dict):
+                    raise ValueError(f"{path}[{index}] 缺少有效的模板选择")
+                item_schema = {"type": "object", "items": template.get("items", {})}
+            previous = None
+            if not item_schema and isinstance(old, list) and old and all(type(x) is type(old[0]) for x in old):
+                previous = old[0]
+            validate(item, previous, item_schema, f"{path}[{index}]", depth + 1)
     choices = schema.get("options")
     if isinstance(choices, list) and choices and not isinstance(value, (list, dict)) and value not in choices:
         # Existing legacy values remain editable without forcing an unrelated migration.
@@ -106,7 +117,12 @@ class ConfigPanel:
             if persona is None:
                 raise web.HTTPNotFound(reason="人格不存在")
             values = {key: copy.deepcopy(getattr(persona, key, None)) for key in self.persona_fields}
-            return values, {"system_prompt": {"type": "text", "description": "人格系统提示词"}}, [], False
+            schema = {"system_prompt": {"type": "text", "description": "人格系统提示词"},
+                      "begin_dialogs": {"type": "list", "items": "string"},
+                      "tools": {"type": "list", "items": "string", "nullable": True},
+                      "skills": {"type": "list", "items": "string", "nullable": True},
+                      "custom_error_message": {"type": "text", "nullable": True}}
+            return values, schema, [], False
         raise ValueError("未知配置类别")
 
     @staticmethod

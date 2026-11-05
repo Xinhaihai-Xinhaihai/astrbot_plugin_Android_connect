@@ -94,7 +94,8 @@ class DesktopVideo:
                     raise web.HTTPConflict(reason="已有视频流，请关闭旧桌面窗口后重试")
                 old = self.active_task
                 if old:
-                    old.cancel()
+                    if not old.cancelling():
+                        old.cancel()
                     await asyncio.gather(old, return_exceptions=True)
             self.check(session)
             executable = self.executable()
@@ -133,28 +134,38 @@ class DesktopVideo:
             elif not ws.prepared:
                 raise
         finally:
-            if process:
-                if process.poll() is None:
-                    process.kill()
-                await asyncio.to_thread(process.wait)
-                process.stdout.close()
-            if receiver:
-                receiver.cancel()
-                await asyncio.gather(receiver, return_exceptions=True)
-            if ws.prepared:
-                with contextlib.suppress(Exception):
-                    await asyncio.wait_for(ws.close(), 2)
-            if self.active is ws:
-                self.active = None
-                self.active_session = None
-                self.active_task = None
-            if callable(getattr(self.input, "release", None)):
-                await self.input.release(session)
-            self.handlers.discard(task)
+            async def cleanup():
+                if process:
+                    if process.poll() is None:
+                        process.kill()
+                    await asyncio.to_thread(process.wait)
+                    process.stdout.close()
+                if callable(getattr(self.input, "release", None)):
+                    with contextlib.suppress(Exception):
+                        await self.input.release(session)
+                if receiver:
+                    receiver.cancel()
+                    await asyncio.gather(receiver, return_exceptions=True)
+                if ws.prepared:
+                    with contextlib.suppress(Exception):
+                        await asyncio.wait_for(ws.close(), 2)
+            closing = asyncio.create_task(cleanup())
+            try:
+                try:
+                    await asyncio.shield(closing)
+                except asyncio.CancelledError:
+                    await closing
+            finally:
+                if self.active is ws:
+                    self.active = None
+                    self.active_session = None
+                    self.active_task = None
+                self.handlers.discard(task)
         return ws
 
     async def close(self):
         tasks = list(self.handlers)
         for task in tasks:
-            task.cancel()
+            if not task.cancelling():
+                task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

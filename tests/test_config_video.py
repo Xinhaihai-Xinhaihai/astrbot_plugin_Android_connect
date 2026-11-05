@@ -9,7 +9,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from bridge.config_panel import ConfigPanel
+from bridge.config_panel import ConfigPanel, validate
 from bridge.service import BridgeService
 from bridge.video import AccessUnits, DesktopVideo
 
@@ -99,6 +99,20 @@ async def test_persona_update_retains_nullable_tools(panel):
     result = await panel.save("persona", "default", original["values"], original["revision"])
     assert result["values"]["system_prompt"] == "after" and result["values"]["tools"] is None
     assert not result["reload_required"]
+
+
+def test_nested_configuration_lists_and_templates():
+    schema = {"type": "list", "items": {"enable": {"type": "bool"}}}
+    validate([{"enable": True}], [], schema)
+    with pytest.raises(ValueError):
+        validate(["not-a-provider"], [], schema)
+    with pytest.raises(ValueError):
+        validate([{"enable": "yes"}], [], schema)
+    template = {"type": "template_list", "templates": {"text": {"items": {"body": {"type": "string"}}}}}
+    validate([{"__template_key": "text", "body": "hello"}], [], template)
+    with pytest.raises(ValueError):
+        validate([{"body": "hello"}], [], template)
+    validate(None, ["tool"], {"type": "list", "nullable": True})
 
 
 async def test_config_api_permissions_and_large_document(tmp_path, panel):
