@@ -5,7 +5,7 @@
 - Android 测试新增横竖屏页面、聊天草稿、任务次数、设备权限、设置地址和配置草稿状态恢复检查。
 - Android 测试覆盖横屏与竖屏虚拟按键独立布局、跨方向同步、两套布局持久化，以及桌面遥控旋转前后输入会话不重建。
 - URL 测试覆盖局域网 HTTP、公网 IPv4 HTTP 默认拒绝与显式允许、公网 IPv4 规范化、HTTP 域名拒绝和 HTTPS 域名允许。
-- Python 后端测试、Ruff、Android 签名构建、Lint 与 Android 35 模拟器结果将在 Actions 完成后补充。
+- Ruff、Python compileall、后端测试、Android 签名构建、Lint 与 Android 35 x86_64 模拟器全流程通过（Actions 42478380087）。模拟器测试已输出 PASS: four navigation pages，覆盖旋转状态保持和横竖屏虚拟键布局。
 
 真实手机的系统旋转策略、厂商后台限制、外接手柄、路由器端口转发、运营商 CGNAT 与公网链路仍需实机验证。公网 HTTP 测试只验证地址策略和请求链路，不代表明文传输适合长期公开部署。
 
