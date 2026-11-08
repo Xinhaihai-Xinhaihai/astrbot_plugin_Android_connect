@@ -16,7 +16,7 @@ final class DesktopChannel implements AutoCloseable {
     DesktopChannel(Prefs prefs,String session,Listener listener)throws Exception {
         this.listener=listener;
         String token=prefs.token();if(token.length()<32)throw new Exception("请先填写连接密钥");
-        socket=client.newWebSocket(new Request.Builder().url(Api.validateUrl(prefs.url())+"/api/v1/desktop/input?session="+session)
+        socket=client.newWebSocket(new Request.Builder().url(Api.validateUrl(prefs.url(),prefs.allowPublicHttp())+"/api/v1/desktop/input?session="+session)
             .header("Authorization","Bearer "+token).build(),new WebSocketListener(){
             @Override public void onMessage(WebSocket ws,String text){
                 if(closed)return;

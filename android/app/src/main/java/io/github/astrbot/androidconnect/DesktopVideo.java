@@ -19,7 +19,7 @@ final class DesktopVideo implements AutoCloseable {
     private final Listener listener;private volatile boolean closed;private WebSocket socket;
     DesktopVideo(Prefs prefs,Surface surface,String session,int fps,int size,Listener listener) throws Exception {
         this.listener=listener;
-        String base=Api.validateUrl(prefs.url());String token=prefs.token();
+        String base=Api.validateUrl(prefs.url(),prefs.allowPublicHttp());String token=prefs.token();
         if(token.length()<32)throw new Exception("请先填写连接密钥");
         String address=base+"/api/v1/desktop/video?session="+session+"&fps="+fps+"&size="+size;
         socket=client.newWebSocket(new Request.Builder().url(address).header("Authorization","Bearer "+token).build(),new WebSocketListener(){

@@ -75,29 +75,31 @@ final class ConnectionWizard {
     private void stopDiscovery(){dismissed=true;if(manager!=null&&listener!=null)try{manager.stopServiceDiscovery(listener);}catch(Exception ignored){}}
     void remote() {
         LinearLayout box=column();
-        text(box,"通过 Cloudflare Tunnel，手机在外也能连接家中电脑。选择一种电脑端设置方式：");
+        text(box,"通过 Cloudflare Tunnel，手机在外也能连接家中电脑。推荐使用 HTTPS 隧道；也可在路由器转发 TCP 8765，并显式启用公网 IPv4 HTTP 直连。");
         button(box,"快速试用：临时 HTTPS 地址",()->info("临时隧道 · 适合首次测试",
             "1. 先让插件在电脑启动，端口默认 8765。\n\n2. Windows PowerShell 安装 cloudflared：\nwinget install --id Cloudflare.cloudflared --exact\n\n3. 重新打开 PowerShell，运行：\ncloudflared tunnel --url http://127.0.0.1:8765\n\n4. 终端会显示 https://随机名称.trycloudflare.com，复制到手机下方地址框。终端需保持运行。\n\n5. 电脑插件生成一次配对码，手机点击“使用配对码连接”。\n\n临时地址会随重启变化，不保证持续可用。夜间长期使用请选择固定域名隧道。"));
         button(box,"长期使用：固定域名隧道",()->info("固定域名 · 适合长期远程",
             "1. 已有域名（阿里云等）：在 dash.cloudflare.com 进入 Domains → Onboard a domain，填根域名，选择 Free。\n\n2. 将 Cloudflare 分配的两条名称服务器复制到域名注册商的“DNS 服务器”设置，等待 Cloudflare 显示 Active。域名仍在原平台续费，无须重新购买。\n\n3. Cloudflare 控制台进入 Networking → Tunnels，创建隧道；旧界面可能为 Networks → Connectors。选择 Windows，按控制台命令安装 cloudflared；确认 Healthy。\n\n4. 隧道内进入 Routes → Add route → Published application。子域名填 astrbot，选择自己的域名，Path 留空。\n\n5. Service URL 填 http://127.0.0.1:8765；若分两栏，类型 HTTP，地址 127.0.0.1:8765。安装服务时按系统提示使用管理员 PowerShell。\n\n6. 手机填写 https://astrbot.你的域名，再用电脑新生成的配对码连接。\n\n隧道安装令牌不填进手机。此地址转发插件接口；本版本使用插件配对/密钥鉴权，不支持 Cloudflare Access 浏览器登录页。"));
+        text(box,"公网 IP 直连：路由器把 TCP 8765 转发到电脑局域网 IPv4，Windows 防火墙放行 TCP 8765；先在设置页启用“允许公网 IPv4 使用 HTTP”，再在这里填 http://公网IP:8765。公网 HTTP 会明文传输聊天、连接密钥、截图和遥控输入；能用 Tunnel 或 HTTPS 时应优先使用。");
         button(box,"使用远程地址 + 配对码连接",()->pairPrompt("远程配对",prefs.get("remote_url","https://"),"remote_url"));
         button(box,"连接失败排查",()->info("远程连接排查",
             "502：确认 AstrBot 插件已启动，隧道服务地址与端口正确。\n\n1033/隧道离线：检查 cloudflared 是否在运行，Cloudflare 控制台是否显示 Healthy。\n\n返回网页而不是插件数据：检查地址是否指向插件 8765 端口，以及是否出现 Cloudflare Access 登录页。\n\n配对码失效：电脑重新生成，2 分钟内输入。尝试超过 5 次会关闭配对窗口。\n\n已经配对但 401：电脑连接密钥可能被更换，请重新配对。\n\n手机可联网但无响应：检查 Tunnel 域名是否可达，以及电脑是否进入睡眠。"));
         dialog("Cloudflare · 远程连接",box).show();
     }
     private void pairPrompt(String title,String address,String profile) {
-        LinearLayout box=column();text(box,"在电脑插件配置开启“生成一次手机配对码”，从 AstrBot 日志查看 6 位码；也可管理员私聊 /android_pair。");
+        LinearLayout box=column();text(box,"在电脑插件配置开启“生成一次手机配对码”，从 AstrBot 日志查看 6 位码；也可管理员私聊 /android_pair。配对成功会保存插件生成的连接密钥；GitHub PAT 不需要，也不要填到手机。");
         EditText url=field(box,"电脑地址",address);EditText code=field(box,"6 位一次性配对码","");code.setInputType(InputType.TYPE_CLASS_NUMBER);
         TextView progress=new TextView(activity);box.addView(progress);
         AlertDialog dialog=dialog(title,box);
         button(box,"配对并保存",()->{
-            String endpoint=url.getText().toString().trim(),pin=code.getText().toString().trim();
-            if(profile.equals("remote_url")&&!endpoint.startsWith("https://")){progress.setText("远程连接必须使用 HTTPS");return;}
+            String endpoint=url.getText().toString().trim(),pin=code.getText().toString().trim();String normalized;
+            try{normalized=Api.validateUrl(endpoint,prefs.allowPublicHttp());}
+            catch(Exception e){progress.setText(e.getMessage());return;}
             progress.setText("正在配对…");
             worker.execute(()->{try{
-                org.json.JSONObject result=api.pair(endpoint,pin);String token=result.getString("token");
+                org.json.JSONObject result=api.pair(normalized,pin,prefs.allowPublicHttp());String token=result.getString("token");
                 if(token.length()<32)throw new Exception("电脑返回了无效密钥");
-                PhoneControlService.disableLocally(activity);prefs.token(token);prefs.put("url",Api.validateUrl(endpoint));prefs.put(profile,Api.validateUrl(endpoint));
+                PhoneControlService.disableLocally(activity);prefs.token(token);prefs.put("url",normalized);prefs.put(profile,normalized);
                 activity.runOnUiThread(()->{dialog.dismiss();stopDiscovery();connected.run();Toast.makeText(activity,"配对成功",Toast.LENGTH_SHORT).show();});
             }catch(Exception e){activity.runOnUiThread(()->progress.setText(e.getMessage()));}});
         });dialog.show();

@@ -3,6 +3,7 @@ package io.github.astrbot.androidconnect;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -62,5 +63,10 @@ public class PluginPanelActivity extends Activity {
         }
     }
     private void openConfig(String kind,String id,String title){startActivity(new Intent(this,ConfigActivity.class).putExtra("kind",kind).putExtra("id",id).putExtra("title",title));}
+    @Override public void onConfigurationChanged(Configuration config) {
+        super.onConfigurationChanged(config);
+        View content=findViewById(android.R.id.content);
+        content.requestApplyInsets();content.requestLayout();
+    }
     @Override protected void onDestroy(){worker.shutdown();super.onDestroy();}
 }

@@ -2,6 +2,7 @@ package io.github.astrbot.androidconnect;
 
 import android.app.*;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.graphics.Typeface;
 import android.view.*;
@@ -42,6 +43,11 @@ public class GlobalConfigActivity extends Activity {
             }
             if(count==0)list.addView(label("暂无"+(kind.equals("global")?"配置方案":"人格"),14));
         }
+    }
+    @Override public void onConfigurationChanged(Configuration config) {
+        super.onConfigurationChanged(config);
+        View content=findViewById(android.R.id.content);
+        content.requestApplyInsets();content.requestLayout();
     }
     @Override protected void onDestroy(){worker.shutdown();super.onDestroy();}
 }

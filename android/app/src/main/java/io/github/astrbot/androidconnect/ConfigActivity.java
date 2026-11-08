@@ -2,6 +2,7 @@ package io.github.astrbot.androidconnect;
 
 import android.app.*;
 import android.os.Bundle;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.*;
@@ -106,6 +107,13 @@ public class ConfigActivity extends Activity {
     private void save(){JSONObject document=Api.json("kind",kind,"id",id,"revision",revision,"values",values);enabled(false);worker.execute(()->{try{JSONObject result=api.call("POST","/panel/config",document);runOnUiThread(()->{accept(result);Toast.makeText(this,"配置已保存到电脑",Toast.LENGTH_LONG).show();});}catch(Exception e){runOnUiThread(()->error(e));}});}
     private void reloadPlugin(){if(busy)return;if(dirty){Toast.makeText(this,"请先保存配置",Toast.LENGTH_SHORT).show();return;}new AlertDialog.Builder(this).setTitle("重载插件").setMessage("此插件正在处理的工作可能中断。").setNegativeButton("取消",null).setPositiveButton("重载",(d,w)->{enabled(false);worker.execute(()->{try{JSONObject result=api.call("POST","/panel/reload",Api.json("name",id));runOnUiThread(()->{enabled(true);notice.setText(result.optString("message"));});}catch(Exception e){runOnUiThread(()->error(e));}});}).show();}
     private void leave(){if(busy)return;if(dirty)new AlertDialog.Builder(this).setMessage("还有未保存的修改，确定离开？").setNegativeButton("继续编辑",null).setPositiveButton("放弃修改",(d,w)->finish()).show();else finish();}
+    private void sizeEditorDialog(AlertDialog dialog){if(dialog!=null&&dialog.isShowing())dialog.getWindow().setLayout(-1,(int)(getResources().getDisplayMetrics().heightPixels*.85));}
+    @Override public void onConfigurationChanged(Configuration config) {
+        super.onConfigurationChanged(config);
+        View content=findViewById(android.R.id.content);
+        content.requestApplyInsets();content.requestLayout();
+        sizeEditorDialog(arrayEditor);sizeEditorDialog(itemEditor);
+    }
     @Override public void onBackPressed(){leave();}
     @Override protected void onDestroy(){worker.shutdown();super.onDestroy();}
 }

@@ -28,6 +28,8 @@ final class Prefs {
             .putString("session_started",Long.toString(System.currentTimeMillis())).commit();
     }
     String url() { return get("url", ""); }
+    boolean allowPublicHttp() { return p.getBoolean("allow_public_http", false); }
+    void allowPublicHttp(boolean value) { p.edit().putBoolean("allow_public_http", value).commit(); }
     private SecretKey key() throws Exception {
         KeyStore ks = KeyStore.getInstance("AndroidKeyStore"); ks.load(null);
         if (!ks.containsAlias(KEY)) {

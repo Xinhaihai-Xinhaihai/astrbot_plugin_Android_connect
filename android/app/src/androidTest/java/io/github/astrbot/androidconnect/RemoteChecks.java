@@ -2,6 +2,7 @@ package io.github.astrbot.androidconnect;
 
 import android.app.*;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.*;
 import android.os.SystemClock;
@@ -11,6 +12,7 @@ import android.widget.*;
 import java.io.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 final class RemoteChecks {
@@ -51,7 +53,8 @@ final class RemoteChecks {
         if(queue.packet("test",1).getJSONArray("keys").length()!=1||queue.packet("test",2).getJSONArray("keys").length()!=0)throw new Exception("Quick taps were lost");
         queue.hold("virtual","w",true);queue.hold("keyboard","w",true);queue.hold("virtual","w",false);
         queue.packet("test",3);queue.packet("test",4);if(queue.packet("test",5).getJSONArray("keys").length()!=1)throw new Exception("One source released another source's key");
-        Prefs prefs=new Prefs(test.getTargetContext());String oldUrl=prefs.url(),oldToken=prefs.token();Activity activity=null;
+        Prefs prefs=new Prefs(test.getTargetContext());String oldUrl=prefs.url(),oldToken=prefs.token(),oldPad=prefs.get("virtual_keys_v1",""),oldPortrait=prefs.get("virtual_keys_v2_portrait",""),oldLandscape=prefs.get("virtual_keys_v2_landscape","");Activity activity=null;
+        JSONArray portraitLayout=new JSONArray().put(Api.json("id","rotation-w","label","竖屏W","action","w","x",.1,"y",.8,"size",48,"alpha",100));JSONArray landscapeLayout=new JSONArray().put(Api.json("id","rotation-w","label","横屏W","action","w","x",.8,"y",.7,"size",52,"alpha",100));
         try(ConversationChecks.MockBridge server=new ConversationChecks.MockBridge(prefs.id("session"))) {
             prefs.put("url","http://127.0.0.1:"+server.port());prefs.token("instrumentation-only-token-000000000000");
             PluginPanelActivity panel=(PluginPanelActivity)test.startActivitySync(new Intent(test.getTargetContext(),PluginPanelActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));activity=panel;
@@ -60,15 +63,19 @@ final class RemoteChecks {
             test.runOnMainSync(()->panel.confirmation.getButton(AlertDialog.BUTTON_POSITIVE).performClick());
             await(test,()->!server.pluginEnabled,"Plugin switch did not reach host");
             test.runOnMainSync(panel::finish);
+            prefs.put("virtual_keys_v2_portrait",portraitLayout.toString());prefs.put("virtual_keys_v2_landscape",landscapeLayout.toString());
             DesktopActivity desktop=(DesktopActivity)test.startActivitySync(new Intent(test.getTargetContext(),DesktopActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));activity=desktop;
             awaitDesktop(test,desktop,"Desktop session did not start");
+            if(desktop.getResources().getConfiguration().orientation!=Configuration.ORIENTATION_PORTRAIT)throw new Exception("Desktop did not start in portrait for rotation check");
+            int landscapeReleaseBaseline=server.releases;
             test.runOnMainSync(()->find(desktop.getWindow().getDecorView(),"横屏 / 竖屏").performClick());
             await(test,()->desktop.getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE,"Landscape did not open");
-            awaitDesktop(test,desktop,"Landscape input session did not reconnect");
+            awaitDesktop(test,desktop,"Landscape input session was not retained");
             Thread.sleep(500);awaitDesktop(test,desktop,"Landscape input focus did not settle");
-            test.runOnMainSync(()->{Button w=find(desktop.getWindow().getDecorView(),"W");long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,10,10,0);w.dispatchTouchEvent(down);down.recycle();});
-            try{await(test,()->server.inputHistory.stream().anyMatch(s->s.contains("\"w\"")),"Virtual key press missing");}catch(Exception e){final String[] state={""};test.runOnMainSync(()->state[0]=desktop.connectionInfo());throw new Exception("Virtual key press missing: "+state[0]+"; input="+server.latestInput,e);}
-            test.runOnMainSync(()->{Button w=find(desktop.getWindow().getDecorView(),"W");long now=SystemClock.uptimeMillis();MotionEvent up=MotionEvent.obtain(now,now,MotionEvent.ACTION_UP,10,10,0);w.dispatchTouchEvent(up);up.recycle();});
+            if(server.releases!=landscapeReleaseBaseline)throw new Exception("Portrait-to-landscape changed the desktop session");
+            test.runOnMainSync(()->{Button w=find(desktop.getWindow().getDecorView(),"横屏W");if(w==null)throw new IllegalStateException("Landscape virtual layout missing");long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,10,10,0);w.dispatchTouchEvent(down);down.recycle();});
+            try{await(test,()->server.inputHistory.stream().anyMatch(s->s.contains("\"w\"")),"Landscape virtual key press missing");}catch(Exception e){final String[] state={""};test.runOnMainSync(()->state[0]=desktop.connectionInfo());throw new Exception("Landscape virtual key press missing: "+state[0]+"; input="+server.latestInput,e);}
+            test.runOnMainSync(()->{Button w=find(desktop.getWindow().getDecorView(),"横屏W");long now=SystemClock.uptimeMillis();MotionEvent up=MotionEvent.obtain(now,now,MotionEvent.ACTION_UP,10,10,0);w.dispatchTouchEvent(up);up.recycle();});
             await(test,()->server.latestInput.optJSONArray("keys").length()==0,"Virtual key release missing");
             test.runOnMainSync(()->desktop.dispatchKeyEvent(new KeyEvent(0,0,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_A,0,0,1,0,0,InputDevice.SOURCE_KEYBOARD)));
             await(test,()->server.latestInput.optJSONArray("keys").toString().contains("a"),"External keyboard missing");
@@ -82,8 +89,18 @@ final class RemoteChecks {
                 imageView(desktop.getWindow().getDecorView()).dispatchGenericMotionEvent(mouse);mouse.recycle();
             });
             await(test,()->server.inputHistory.stream().anyMatch(s->s.contains("\"scroll\":1")),"External mouse wheel missing");
-            screenshot(test,desktop,"横屏遥控");int before=server.releases;test.runOnMainSync(desktop::finish);activity=null;
-            await(test,()->server.releases>before,"Leaving desktop did not release keys");
-        } finally {if(activity!=null){Activity current=activity;test.runOnMainSync(current::finish);}prefs.put("url",oldUrl);prefs.token(oldToken);}
+            screenshot(test,desktop,"横屏遥控");
+            int portraitReleaseBaseline=server.releases;
+            test.runOnMainSync(()->find(desktop.getWindow().getDecorView(),"横屏 / 竖屏").performClick());
+            await(test,()->desktop.getResources().getConfiguration().orientation==Configuration.ORIENTATION_PORTRAIT,"Portrait did not return");
+            awaitDesktop(test,desktop,"Portrait input session was not retained");
+            Thread.sleep(500);awaitDesktop(test,desktop,"Portrait input focus did not settle");
+            if(server.releases!=portraitReleaseBaseline)throw new Exception("Landscape-to-portrait changed the desktop session");
+            if(find(desktop.getWindow().getDecorView(),"竖屏W")==null)throw new Exception("Portrait virtual layout was overwritten");
+            if(!prefs.get("virtual_keys_v2_portrait","").contains("\"x\":0.1"))throw new Exception("Portrait position was not persisted");
+            if(!prefs.get("virtual_keys_v2_landscape","").contains("\"x\":0.8"))throw new Exception("Landscape position was not persisted");
+            screenshot(test,desktop,"竖屏遥控");int leaving=server.releases;test.runOnMainSync(desktop::finish);activity=null;
+            await(test,()->server.releases>leaving,"Leaving desktop did not release keys");
+        } finally {if(activity!=null){Activity current=activity;test.runOnMainSync(current::finish);}prefs.put("url",oldUrl);prefs.token(oldToken);prefs.put("virtual_keys_v1",oldPad);prefs.put("virtual_keys_v2_portrait",oldPortrait);prefs.put("virtual_keys_v2_landscape",oldLandscape);}
     }
 }

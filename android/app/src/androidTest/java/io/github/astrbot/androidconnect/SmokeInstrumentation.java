@@ -2,12 +2,17 @@ package io.github.astrbot.androidconnect;
 
 import android.app.Instrumentation;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.RadioButton;
 import java.io.File;
 import java.io.FileOutputStream;
 
@@ -24,6 +29,17 @@ public class SmokeInstrumentation extends Instrumentation {
         }
         return null;
     }
+    private View tagged(View view, String tag) {
+        if (tag.equals(view.getTag())) return view;
+        if(view instanceof ViewGroup) for(int i=0;i<((ViewGroup)view).getChildCount();i++){
+            View result=tagged(((ViewGroup)view).getChildAt(i),tag);if(result!=null)return result;
+        }
+        return null;
+    }
+    private void rotate(MainActivity activity,int requested,int expected) throws Exception {
+        runOnMainSync(()->activity.setRequestedOrientation(requested));
+        RemoteChecks.await(this,()->activity.getResources().getConfiguration().orientation==expected,"Main page did not rotate");
+    }
     @Override public void onStart() {
         Bundle results=new Bundle();
         try {
@@ -35,8 +51,35 @@ public class SmokeInstrumentation extends Instrumentation {
             for(String bad:new String[]{"http://example.com","http://192.168.999.1","https://user:pass@example.com","https://example.com/?token=x"}){
                 boolean rejected=false;try{Api.validateUrl(bad);}catch(Exception expected){rejected=true;}if(!rejected)throw new Exception("Unsafe URL accepted");
             }
+            boolean publicRejected=false;try{Api.validateUrl("http://8.8.8.8:8765");}catch(Exception expected){publicRejected=true;}if(!publicRejected)throw new Exception("Public HTTP enabled by default");
+            if(!Api.validateUrl("http://8.8.8.8:8765",true).equals("http://8.8.8.8:8765"))throw new Exception("Allowed public HTTP IPv4 was rejected");
+            boolean publicDomainRejected=false;try{Api.validateUrl("http://example.com",true);}catch(Exception expected){publicDomainRejected=true;}if(!publicDomainRejected)throw new Exception("Public HTTP domain was accepted");
+            if(!Api.validateUrl("https://example.com").equals("https://example.com"))throw new Exception("HTTPS domain was rejected");
             Intent launch=new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             MainActivity activity=(MainActivity)startActivitySync(launch);waitForIdleSync();
+            rotate(activity,ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,Configuration.ORIENTATION_PORTRAIT);
+            runOnMainSync(()->{Button chat=find(activity.getWindow().getDecorView(),"聊天");if(chat==null)throw new IllegalStateException("Missing chat tab");chat.performClick();});
+            RemoteChecks.await(this,()->tagged(activity.getWindow().getDecorView(),"message_draft")!=null,"Chat composer did not open");
+            runOnMainSync(()->{
+                EditText draft=(EditText)tagged(activity.getWindow().getDecorView(),"message_draft");draft.setText("rotation-draft");
+                CheckBox desktop=(CheckBox)tagged(activity.getWindow().getDecorView(),"desktop_wanted");if(!desktop.isChecked())desktop.performClick();
+                CheckBox phone=(CheckBox)tagged(activity.getWindow().getDecorView(),"phone_wanted");if(!phone.isChecked())phone.performClick();
+                RadioButton five=(RadioButton)find(activity.getWindow().getDecorView(),"5 次");if(five==null)throw new IllegalStateException("Missing repeat option");five.performClick();
+            });
+            rotate(activity,ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,Configuration.ORIENTATION_LANDSCAPE);
+            rotate(activity,ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,Configuration.ORIENTATION_PORTRAIT);
+            runOnMainSync(()->{
+                EditText draft=(EditText)tagged(activity.getWindow().getDecorView(),"message_draft");CheckBox desktop=(CheckBox)tagged(activity.getWindow().getDecorView(),"desktop_wanted");CheckBox phone=(CheckBox)tagged(activity.getWindow().getDecorView(),"phone_wanted");RadioButton five=(RadioButton)find(activity.getWindow().getDecorView(),"5 次");
+                if(draft==null||!draft.getText().toString().equals("rotation-draft"))throw new IllegalStateException("Chat draft was lost after rotation");
+                if(desktop==null||!desktop.isChecked()||phone==null||!phone.isChecked())throw new IllegalStateException("Chat permissions were lost after rotation");
+                if(five==null||!five.isChecked())throw new IllegalStateException("Repeat count was lost after rotation");
+            });
+            runOnMainSync(()->find(activity.getWindow().getDecorView(),"设置").performClick());
+            RemoteChecks.await(this,()->tagged(activity.getWindow().getDecorView(),"server_url")!=null,"Settings page did not open");
+            runOnMainSync(()->((EditText)tagged(activity.getWindow().getDecorView(),"server_url")).setText("http://192.168.1.20:8766"));
+            rotate(activity,ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,Configuration.ORIENTATION_LANDSCAPE);
+            rotate(activity,ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,Configuration.ORIENTATION_PORTRAIT);
+            runOnMainSync(()->{View url=tagged(activity.getWindow().getDecorView(),"server_url");if(!(url instanceof EditText)||!((EditText)url).getText().toString().equals("http://192.168.1.20:8766"))throw new IllegalStateException("Settings URL draft was lost after rotation");});
             for(String page:new String[]{"聊天","任务","控制","设置"}){
                 runOnMainSync(()->{Button button=find(activity.getWindow().getDecorView(),page);if(button==null)throw new IllegalStateException("Missing tab "+page);button.performClick();});
                 waitForIdleSync();Thread.sleep(250);
@@ -55,7 +98,7 @@ public class SmokeInstrumentation extends Instrumentation {
             stage("plugin panel and desktop inputs");RemoteChecks.run(this);
             stage("trackpad, direct touch, drag cancellation and two-finger gestures");PointerChecks.run(this);
             stage("configuration editor, custom keys and H.264 video");ConfigVideoChecks.run(this);
-            results.putString("stream","PASS: four navigation pages, endpoint validation, new conversation lifecycle, four repeat modes, plugin switch, landscape, virtual keys, external keyboard, gamepad and exit release\n");finish(0,results);
+            results.putString("stream","PASS: four navigation pages, rotation state, portrait/landscape layouts, public IPv4 HTTP, endpoint validation, new conversation lifecycle, four repeat modes, plugin switch, virtual keys, external keyboard, gamepad and exit release\n");finish(0,results);
         }catch(Exception e){results.putString("stream","FAIL: "+e+"\n");finish(1,results);}
     }
 }

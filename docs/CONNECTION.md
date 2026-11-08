@@ -1,6 +1,6 @@
 # 连接指南
 
-APK 的 **设置** 页将连接分为两个入口：**局域网**和 **Cloudflare 远程**。两种方式连接同一个电脑插件；配对后保存连接密钥，切换地址不改变 Agent 或会话记录。
+APK 的 **设置** 页提供**局域网**、**Cloudflare 远程**和需显式开启的**公网 IPv4 直连**。三种方式连接同一个电脑插件；配对后保存连接密钥，切换地址不改变 Agent 或会话记录。
 
 ## 局域网排查顺序
 
@@ -14,6 +14,28 @@ APK 的 **设置** 页将连接分为两个入口：**局域网**和 **Cloudflar
 8. 显示成功后先发一条普通聊天消息，再测试设备权限。
 
 插件没有自动修改你的防火墙、路由器或 Windows 网络配置。
+
+## 公网 IPv4 端口转发
+
+这是没有隧道时的直连方式。它使用明文 HTTP，适合你已确认风险、能够自行管理端口暴露的家庭网络。HTTPS 域名或 Cloudflare Tunnel 更安全。
+
+1. 插件设置 `listen_host = 0.0.0.0`、`listen_port = 8765`，保存并重载。
+2. 在电脑执行 `ipconfig`，记下电脑的局域网 IPv4，例如 `192.168.1.10`。
+3. 在路由器建立 **TCP** 端口转发：外部端口 `8765` → 电脑局域网 IPv4 `192.168.1.10` 的 TCP `8765`。局域网自动发现使用 UDP 5353，但公网直连只需 TCP 8765。
+4. 用管理员 PowerShell 放行 Windows 入站端口。以下命令适用于专用网络；若 `Get-NetConnectionProfile` 显示 Public，需要为实际网络配置文件添加规则，或将该网络设为可信的专用网络：
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "AstrBot Connect" -Direction Inbound -Protocol TCP -LocalPort 8765 -Action Allow -Profile Private
+   ```
+
+5. 在 PowerShell 执行 `Invoke-RestMethod https://api.ipify.org` 查询公网 IPv4，并确认路由器 WAN 地址不是私有地址。
+6. 手机先断开 Wi-Fi、使用移动网络测试。APK → **设置** → 勾选 **允许公网 IPv4 使用 HTTP**。
+7. 地址填 `http://公网IP:8765`，再填写插件的 `api_token`。若使用配对，先在电脑生成一次性配对码，再在 **Cloudflare · 远程连接向导** 的“使用远程地址 + 配对码连接”中填写同一地址和配对码。
+8. 确认普通聊天可用后再按需开启电脑或手机授权。
+
+如果公网 IPv4 会变化，可使用 DDNS 跟踪地址；但本版 HTTP 校验只接受数字 IPv4，DDNS 域名必须配置 HTTPS。若运营商使用 CGNAT、封锁 8765 入站，或路由器无法获得公网地址，这个方式不会工作，请改用 Tunnel。
+
+公网 HTTP 不会加密聊天、Bearer 连接密钥、截图或遥控输入。仅开放插件需要的 TCP 端口，不要暴露 AstrBot 管理面板；泄露密钥后立即在电脑修改 `api_token` 并重新配对。GitHub PAT 只用于仓库操作，与 APK 连接无关。
 
 ## Cloudflare 临时隧道
 
@@ -65,7 +87,9 @@ cloudflared tunnel --url http://127.0.0.1:8765
 | 现象 | 检查项 |
 | --- | --- |
 | 自动搜索为空 | 监听地址、UDP 5353、防火墙、访客网络、AP 隔离；改手动 IP 验证 |
-| 连接超时 | 电脑是否开机，AstrBot 是否运行，地址/端口是否正确 |
+| 连接超时 | 电脑是否开机，AstrBot 是否运行，地址/端口是否正确；公网直连还要检查路由器 TCP 转发与 Windows 防火墙 |
+| 公网 HTTP 被拒绝 | 在 APK 设置页启用“允许公网 IPv4 使用 HTTP”；地址必须是数字 IPv4，域名应使用 HTTPS |
+| 公网 IP 不通 | 确认公网 IPv4、运营商 CGNAT/端口封锁、路由器 NAT 与 TCP 8765 入站规则 |
 | 配对码失效 | 重新生成；有效期 2 分钟；超过 5 次错误尝试会关闭窗口 |
 | 401 | 连接密钥被更换或保存失败；重新配对 |
 | 403 电脑/手机控制 | 检查插件总开关、APK 限时授权及本条消息的设备勾选 |

@@ -180,7 +180,20 @@ public class DesktopActivity extends Activity implements InputManager.InputDevic
     private void showDialog(AlertDialog dialog){dialogDepth++;disconnect();dialog.setOnDismissListener(d->{dialogDepth=Math.max(0,dialogDepth-1);if(resumed){immersive();connect();}});dialog.show();}
     private void quality(){showDialog(new AlertDialog.Builder(this).setTitle("目标帧率 · 实际帧率受电脑与网络影响").setItems(new String[]{"H.264 · 60 FPS · 1280px","H.264 · 60 FPS · 1920px","H.264 · 30 FPS · 1280px","H.264 · 30 FPS · 1920px","截图兼容 · 960px · 最高约 4 FPS","截图兼容 · 1600px · 最高约 2 FPS"},(d,w)->{videoMode=w<2?"60":w<4?"30":"jpeg";videoSize=w%2==0?1280:1920;frameDelay=w==5?500:250;prefs.put("video_mode",videoMode);prefs.put("video_size",Integer.toString(videoSize));prefs.put("frame_delay",Integer.toString(frameDelay));live=true;}).create());}
     private void typeText(){EditText field=new EditText(this);field.setHint("向电脑当前焦点输入中文或文字");showDialog(new AlertDialog.Builder(this).setTitle("输入文字").setView(field).setPositiveButton("发送",(d,w)->{String text=field.getText().toString();frameWorker.execute(()->{try{api.call("POST","/desktop",Api.json("action","type_text","arguments",Api.json("text",text)));}catch(Exception e){runOnUiThread(()->fail(e.getMessage()));}});}).setNegativeButton("取消",null).create());}
-    @Override public void onConfigurationChanged(Configuration config){super.onConfigurationChanged(config);disconnect();connect();}
+    @Override public void onConfigurationChanged(Configuration config){
+        super.onConfigurationChanged(config);
+        immersive();
+        pad.repositionForConfiguration();
+        transformVideo();
+        screen.requestFocus();
+        handler.postDelayed(()->{
+            if(isFinishing()||isDestroyed())return;
+            transformVideo();
+            pad.refreshLayout();
+            screen.requestFocus();
+            if(session!=null&&inputReady)startVideo();
+        },80);
+    }
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus&&session!=null)disconnect();else if(focus&&resumed&&live)connect();}
     @Override protected void onResume(){super.onResume();resumed=true;immersive();connect();handler.post(frames);handler.post(stick);}
     @Override protected void onPause(){resumed=false;handler.removeCallbacks(frames);handler.removeCallbacks(stick);disconnect();super.onPause();}

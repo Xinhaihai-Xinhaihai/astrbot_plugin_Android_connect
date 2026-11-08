@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -12,7 +13,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.provider.Settings;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -35,12 +38,16 @@ public class MainActivity extends Activity {
     private LinearLayout root, body, navigation, feed;
     private TextView statusText;
     private EditText message;
+    private ScrollView contentScroll;
+    private EditText settingsUrlField, settingsTokenField;
+    private String settingsUrlDraft, settingsTokenDraft;
+    private int scrollY;
     private Button send, newChat;
     private CheckBox useDesktop, usePhone;
     private RadioGroup repeatModes;
     private int repeatCount = 1;
     private String page = "聊天", draft = "", lastFeed = "";
-    private boolean connected, refreshing, posting, resumed, desktopWanted, phoneWanted;
+    private boolean connected, refreshing, posting, resumed, desktopWanted, phoneWanted, publicHttpWanted;
     private JSONObject status = new JSONObject();
     private JSONArray jobs = new JSONArray();
     private final Runnable refreshLoop = new Runnable() {
@@ -51,18 +58,30 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        prefs = new Prefs(this); api = new Api(prefs);
+        prefs = new Prefs(this); api = new Api(prefs); publicHttpWanted = prefs.allowPublicHttp();
         page = prefs.url().isEmpty() ? "设置" : "聊天";
         if (saved != null) {
             draft = saved.getString("draft", ""); page = saved.getString("page", page);
             repeatCount = saved.getInt("repeat_count", 1);
+            desktopWanted = saved.getBoolean("desktop_wanted", false);
+            phoneWanted = saved.getBoolean("phone_wanted", false);
+            settingsUrlDraft = saved.getString("settings_url", null);
+            scrollY = saved.getInt("scroll_y", 0);
         }
         show(page);
     }
     @Override protected void onSaveInstanceState(Bundle out) {
-        if (message != null) draft = message.getText().toString();
+        captureUiState();
         out.putString("draft", draft); out.putString("page", page);
-        out.putInt("repeat_count", repeatCount); super.onSaveInstanceState(out);
+        out.putInt("repeat_count", repeatCount);
+        out.putBoolean("desktop_wanted", desktopWanted); out.putBoolean("phone_wanted", phoneWanted);
+        if (settingsUrlDraft != null) out.putString("settings_url", settingsUrlDraft);
+        out.putInt("scroll_y", scrollY);
+        super.onSaveInstanceState(out);
+    }
+    @Override public void onConfigurationChanged(Configuration config) {
+        super.onConfigurationChanged(config);
+        show(page);
     }
     @Override protected void onResume() { super.onResume(); resumed = true; handler.post(refreshLoop); }
     @Override protected void onPause() { resumed = false; handler.removeCallbacks(refreshLoop); super.onPause(); }
@@ -97,9 +116,15 @@ public class MainActivity extends Activity {
         f.setInputType(secret ? InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         parent.addView(f,new LinearLayout.LayoutParams(-1,dp(54))); return f;
     }
-    private void show(String selected) {
+    private void captureUiState() {
         if (message != null) draft=message.getText().toString();
-        message=null; feed=null; send=null; newChat=null; repeatModes=null; page=selected; lastFeed="";
+        if (contentScroll != null) scrollY=contentScroll.getScrollY();
+    }
+    private void show(String selected) {
+        boolean samePage=page.equals(selected);
+        captureUiState(); if(!samePage)scrollY=0;
+        message=null; feed=null; send=null; newChat=null; repeatModes=null; contentScroll=null;
+        settingsUrlField=null; settingsTokenField=null; page=selected; lastFeed="";
         root=column(); root.setBackgroundColor(BG);
         root.setOnApplyWindowInsetsListener((v,insets)-> {
             root.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());
@@ -120,18 +145,19 @@ public class MainActivity extends Activity {
             navigation.addView(tab,new LinearLayout.LayoutParams(0,dp(54),1));
         }
         root.addView(navigation); setContentView(root); root.requestApplyInsets();
+        root.post(()->{if(contentScroll!=null)contentScroll.scrollTo(0,scrollY);});
     }
     private LinearLayout scrolling() {
-        ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true); scroll.setClipToPadding(false);
+        ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true); scroll.setClipToPadding(false); contentScroll=scroll;
         LinearLayout content=column(); scroll.addView(content); body.addView(scroll,new LinearLayout.LayoutParams(-1,-1)); return content;
     }
     private void chat() {
-        ScrollView scroll=new ScrollView(this);LinearLayout conversation=column();scroll.addView(conversation);
+        ScrollView scroll=new ScrollView(this);contentScroll=scroll;LinearLayout conversation=column();scroll.addView(conversation);
         body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout intro=card(conversation,"把想做的事，交给 AstrBot","手机发送 · 电脑执行 · 随时回来查看结果");
         LinearLayout permissionRow=new LinearLayout(this);
-        useDesktop=new CheckBox(this); useDesktop.setText("可操控电脑"); useDesktop.setTextSize(12); useDesktop.setChecked(desktopWanted);
-        usePhone=new CheckBox(this); usePhone.setText("可操控手机"); usePhone.setTextSize(12); usePhone.setChecked(phoneWanted);
+        useDesktop=new CheckBox(this); useDesktop.setTag("desktop_wanted"); useDesktop.setText("可操控电脑"); useDesktop.setTextSize(12); useDesktop.setChecked(desktopWanted);
+        usePhone=new CheckBox(this); usePhone.setTag("phone_wanted"); usePhone.setText("可操控手机"); usePhone.setTextSize(12); usePhone.setChecked(phoneWanted);
         permissionRow.addView(useDesktop,new LinearLayout.LayoutParams(0,-2,1)); permissionRow.addView(usePhone,new LinearLayout.LayoutParams(0,-2,1)); intro.addView(permissionRow);
         useDesktop.setOnCheckedChangeListener((v,c)->desktopWanted=c); usePhone.setOnCheckedChangeListener((v,c)->phoneWanted=c);
         intro.addView(text("任务次数",12,MUTED));
@@ -148,7 +174,7 @@ public class MainActivity extends Activity {
         feed=column();conversation.addView(feed);
         renderFeed();
         LinearLayout composer=column(); composer.setPadding(0,dp(8),0,dp(8));
-        message=new EditText(this); message.setTextSize(15); message.setMinLines(2); message.setMaxLines(5); message.setGravity(Gravity.TOP);
+        message=new EditText(this); message.setTag("message_draft"); message.setTextSize(15); message.setMinLines(2); message.setMaxLines(5); message.setGravity(Gravity.TOP);
         message.setHint("例如：整理电脑里的项目，完成后告诉我结果…"); message.setText(draft);
         message.setBackground(background(Color.WHITE,14)); message.setPadding(dp(14),dp(12),dp(14),dp(12)); composer.addView(message);
         LinearLayout actions=new LinearLayout(this);
@@ -313,6 +339,8 @@ public class MainActivity extends Activity {
             handler.postDelayed(()->show("控制"),300);
         });
     }
+    interface TextChange { void accept(String value); }
+    private void track(EditText field,TextChange listener){field.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){}public void afterTextChanged(Editable s){listener.accept(s.toString());}});}
     private void settings() {
         LinearLayout content=scrolling();
         LinearLayout wizard=card(content,"添加或切换连接","选择连接方式，跟随步骤完成配对。配对后自动保存密钥。");
@@ -323,23 +351,29 @@ public class MainActivity extends Activity {
                 PhoneControlService.disableLocally(this);prefs.put("url",address);show("设置");refresh(true);
             }));
         }
-        LinearLayout connect=card(content,"连接电脑","局域网填写电脑 IP；外出使用 Cloudflare Tunnel 的 HTTPS 地址。");
-        EditText url=field(connect,"服务器地址",prefs.url(),"http://192.168.1.10:8765",false);
-        String savedToken="";try{savedToken=prefs.token();}catch(Exception ignored){}
-        EditText token=field(connect,"连接密钥",savedToken,"从 AstrBot 插件配置复制",true);
+        LinearLayout connect=card(content,"连接电脑","局域网可用 HTTP；公网推荐 Cloudflare HTTPS。直接填写公网 IP 时需显式允许明文 HTTP。");
+        String initialUrl=settingsUrlDraft!=null?settingsUrlDraft:prefs.url();
+        settingsUrlField=field(connect,"服务器地址",initialUrl,"http://192.168.1.10:8765",false); settingsUrlField.setTag("server_url");
+        String savedToken=settingsTokenDraft!=null?settingsTokenDraft:"";if(settingsTokenDraft==null)try{savedToken=prefs.token();}catch(Exception ignored){} settingsTokenDraft=savedToken;
+        settingsTokenField=field(connect,"连接密钥",savedToken,"从 AstrBot 插件配置复制",true); settingsTokenField.setTag("server_token");
+        track(settingsUrlField,value->settingsUrlDraft=value); track(settingsTokenField,value->settingsTokenDraft=value);
+        CheckBox allowPublicHttp=new CheckBox(this);allowPublicHttp.setTag("allow_public_http");allowPublicHttp.setText("允许公网 IPv4 使用 HTTP（密钥和操作会明文传输）");allowPublicHttp.setTextSize(12);allowPublicHttp.setTextColor(INK);allowPublicHttp.setChecked(publicHttpWanted);allowPublicHttp.setOnCheckedChangeListener((v,c)->publicHttpWanted=c);connect.addView(allowPublicHttp);
+        TextView publicWarning=text("仅在无法使用 Tunnel、TLS 反向代理且已限制暴露端口时启用。公网地址填写 http://公网IP:8765；更安全的做法是 https://域名。",11,Color.rgb(198,57,72));connect.addView(publicWarning);
         connect.addView(button("保存并测试连接",()->{
             try{
-                String normalized=Api.validateUrl(url.getText().toString());String secret=token.getText().toString().trim();
+                boolean allowPublic=allowPublicHttp.isChecked();String raw=settingsUrlField.getText().toString();
+                String normalized=Api.validateUrl(raw,allowPublic);String secret=settingsTokenField.getText().toString().trim();
                 if(secret.length()<32)throw new Exception("连接密钥至少需要 32 个字符");
-                PhoneControlService.disableLocally(this); prefs.put("url",normalized);prefs.token(secret); connected=false;refresh(true);
+                if(Api.isPublicHttp(normalized)&&!allowPublic)throw new Exception("公网 HTTP 默认关闭，请勾选上方选项或改用 HTTPS");
+                PhoneControlService.disableLocally(this);prefs.allowPublicHttp(allowPublic);prefs.put("url",normalized);prefs.token(secret);settingsUrlDraft=normalized;settingsTokenDraft=secret;connected=false;refresh(true);
             }catch(Exception e){error(e.getMessage());}
         }));
-        LinearLayout guide=card(content,"连接方式","首版支持局域网 + Cloudflare Tunnel");
-        guide.addView(text("局域网\n电脑插件 listen_host 设为 0.0.0.0，手机与电脑连同一 Wi-Fi。\n\nCloudflare Tunnel\n将隧道转发到 http://127.0.0.1:8765，手机填写隧道的 HTTPS 地址。\n\n两个地址使用同一连接密钥；切换地址后请重新开启手机控制。",14,INK));
+        LinearLayout guide=card(content,"连接方式","局域网 HTTP、Cloudflare HTTPS，或显式启用的公网 IPv4 HTTP");
+        guide.addView(text("局域网\n电脑插件 listen_host 设为 0.0.0.0，手机与电脑连同一 Wi-Fi，地址填 http://电脑IP:8765。\n\nCloudflare Tunnel\n将隧道转发到 http://127.0.0.1:8765，手机填写隧道的 HTTPS 地址。\n\n公网 IP\n路由器把 TCP 8765 转发到电脑局域网 IP，Windows 防火墙放行 TCP 8765；手机填 http://公网IP:8765，并勾选上面的明文 HTTP 选项。建议改用 TLS 或 Tunnel。\n\n所有地址使用同一连接密钥；切换地址后请重新开启手机控制。",13,INK));
         LinearLayout access=card(content,"授权与隐私","电脑、手机与 PowerShell 各有独立总开关，默认关闭。");
         access.addView(button("打开手机无障碍设置",()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
         access.addView(text("密钥使用 Android Keystore 加密保存。聊天和任务记录保存在电脑端。截图与界面文本可能发送给 AstrBot 配置的模型。手机锁屏或系统授权界面不可被 Agent 绕过。",13,MUTED));
-        card(content,"AstrBot Connect 0.4.0","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
+        card(content,"AstrBot Connect 0.6.0","Android 8.0+ · Windows AstrBot 4.29.4+\nMIT License\n项目：Xinhaihai-Xinhaihai / astrbot_plugin_Android_connect");
     }
     private void remoteDesktop() {
         if(!status.optBoolean("desktop_enabled")){error("请先开启电脑控制");return;}
