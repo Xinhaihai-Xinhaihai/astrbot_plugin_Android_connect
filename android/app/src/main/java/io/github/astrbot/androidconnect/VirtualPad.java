@@ -27,7 +27,7 @@ final class VirtualPad extends FrameLayout {
     private String otherKey(){return LANDSCAPE_KEY.equals(activeKey)?PORTRAIT_KEY:LANDSCAPE_KEY;}
     private JSONArray read(String key){try{return new JSONArray(prefs.get(key,"[]"));}catch(Exception ignored){return new JSONArray();}}
     private JSONArray defaults(){JSONArray result=new JSONArray();String[] labels={"W","A","S","D","Shift","Ctrl","空格","E","R","Esc","左键","右键"};String[] actions={"w","a","s","d","shift","ctrl","space","e","r","esc","mouse:left","mouse:right"};for(int i=0;i<labels.length;i++)result.put(Api.json("id",UUID.randomUUID().toString(),"label",labels[i],"action",actions[i],"x",(i%6)/5.0,"y",i<6?.78:1,"size",48,"alpha",100));return result;}
-    private void fill(JSONArray list){keys.clear();for(int i=0;i<Math.min(list.length(),32);i++){JSONObject key=list.optJSONObject(i);if(key!=null)keys.add(new JSONObject(key.toString()));}}
+    private void fill(JSONArray list){keys.clear();for(int i=0;i<Math.min(list.length(),32);i++){JSONObject key=list.optJSONObject(i);if(key!=null)try{keys.add(new JSONObject(key.toString()));}catch(JSONException ignored){}}}
     private void load(){JSONArray active=read(currentKey());if(active.length()==0){JSONArray other=read(otherKey()),legacy=read(LEGACY_KEY);JSONArray source=other.length()>0?other:legacy.length()>0?legacy:defaults();active=source;prefs.put(currentKey(),source.toString());if(other.length()==0)prefs.put(otherKey(),source.toString());}fill(active);rebuild();}
     void edit(boolean value){editing=value;setBackgroundColor(value?0x332e3c5b:Color.TRANSPARENT);rebuild();}
     void save(){String value=keys.toString();prefs.put(currentKey(),value);prefs.put(LEGACY_KEY,value);prefs.put("pad_opacity",Integer.toString(opacity));}
